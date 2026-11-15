@@ -1,0 +1,87 @@
+name: sonarcloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sonarcloud:
+    name: Análise SonarCloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico completo, necessário para o Sonar
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Testes com cobertura (todos os pacotes)
+        run: |
+          set -uo pipefail
+          mkdir -p coverage
+          : > coverage/lcov.info
+
+          # Localiza pacotes com pubspec.yaml e pasta test, ignorando exemplos
+          while IFS= read -r pubspec; do
+            pkg="$(dirname "$pubspec")"
+            [ -d "$pkg/test" ] || continue
+            grep -q "sdk: flutter" "$pubspec" || continue
+
+            echo "::group::$pkg"
+            (
+              cd "$pkg"
+              flutter pub get
+              flutter test --coverage
+            ) || echo "::warning::Falha nos testes de $pkg"
+
+            # Reescreve os caminhos (SF:) para ficarem relativos à raiz do repositório
+            if [ -f "$pkg/coverage/lcov.info" ]; then
+              sed "s|^SF:|SF:${pkg#./}/|" "$pkg/coverage/lcov.info" >> coverage/lcov.info
+            fi
+            echo "::endgroup::"
+          done < <(find packages -name pubspec.yaml \
+                     -not -path "*/example/*" \
+                     -not -path "*/.dart_tool/*" \
+                     -not -path "*/build/*" | sort)
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.organization=anamgholanda
+            -Dsonar.projectKey=anamgholanda_flutterfire
+            -Dsonar.projectName=flutterfire
+            -Dsonar.sourceEncoding=UTF-8
+            -Dsonar.sources=packages
+            -Dsonar.inclusions=packages/**/lib/**/*.dart
+            -Dsonar.exclusions=**/example/**,**/*.g.dart,**/*.freezed.dart,**/generated/**,**/*.pb.dart,**/.dart_tool/**
+            -Dsonar.tests=packages
+            -Dsonar.test.inclusions=packages/**/test/**/*.dart
+            -Dsonar.dart.lcov.reportPaths=coverage/lcov.info
+
+      - name: Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
