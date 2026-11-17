@@ -57,11 +57,17 @@ import io.flutter.plugins.firebase.firestore.utils.PigeonParser;
 import io.flutter.plugins.firebase.firestore.utils.PipelineParser;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class FlutterFirebaseFirestorePlugin
@@ -83,10 +89,13 @@ public class FlutterFirebaseFirestorePlugin
 
   private final AtomicReference<Activity> activity = new AtomicReference<>(null);
 
-  private final Map<String, Transaction> transactions = new HashMap<>();
+  // Written from Firestore's transaction worker threads and read from the plugin's
+  // cached thread pool, so this must be a thread-safe map (see #18417).
+  private final Map<String, Transaction> transactions = new ConcurrentHashMap<>();
   private final Map<String, EventChannel> eventChannels = new HashMap<>();
   private final Map<String, StreamHandler> streamHandlers = new HashMap<>();
   private final Map<String, OnTransactionResultListener> transactionHandlers = new HashMap<>();
+  private final Map<String, ExecutorService> snapshotDeliveryExecutors = new ConcurrentHashMap<>();
 
   // Used in the decoder to know which ServerTimestampBehavior to use
   public static final Map<Integer, DocumentSnapshot.ServerTimestampBehavior>
@@ -113,15 +122,30 @@ public class FlutterFirebaseFirestorePlugin
   protected static FirebaseFirestore getFirestoreInstanceByNameAndDatabaseUrl(
       String appName, String databaseURL) {
     synchronized (firestoreInstanceCache) {
-      for (Map.Entry<FirebaseFirestore, FlutterFirebaseFirestoreExtension> entry :
-          firestoreInstanceCache.entrySet()) {
-        if (entry.getValue().getInstance().getApp().getName().equals(appName)
+      Iterator<Map.Entry<FirebaseFirestore, FlutterFirebaseFirestoreExtension>> iterator =
+          firestoreInstanceCache.entrySet().iterator();
+      FirebaseFirestore match = null;
+      while (iterator.hasNext()) {
+        Map.Entry<FirebaseFirestore, FlutterFirebaseFirestoreExtension> entry = iterator.next();
+        // getName() throws after delete(), and the SDK has no public check.
+        final String cachedAppName;
+        try {
+          cachedAppName = entry.getValue().getInstance().getApp().getName();
+        } catch (IllegalStateException exception) {
+          if ("FirebaseApp was deleted".equals(exception.getMessage())) {
+            iterator.remove();
+            continue;
+          }
+          throw exception;
+        }
+        if (match == null
+            && cachedAppName.equals(appName)
             && entry.getValue().getDatabaseURL().equals(databaseURL)) {
-          return entry.getKey();
+          match = entry.getKey();
         }
       }
+      return match;
     }
-    return null;
   }
 
   private static void destroyCachedFirebaseFirestoreInstanceForKey(FirebaseFirestore firestore) {
@@ -274,6 +298,23 @@ public class FlutterFirebaseFirestorePlugin
     return identifier;
   }
 
+  private void removeTransaction(String transactionId) {
+    transactions.remove(transactionId);
+    transactionHandlers.remove(transactionId);
+
+    // onCancel invokes this method, so remove the handler without cancelling it again.
+    synchronized (streamHandlers) {
+      streamHandlers.remove(transactionId);
+    }
+
+    synchronized (eventChannels) {
+      EventChannel eventChannel = eventChannels.remove(transactionId);
+      if (eventChannel != null) {
+        eventChannel.setStreamHandler(null);
+      }
+    }
+  }
+
   private void removeEventListeners() {
     synchronized (eventChannels) {
       for (String identifier : eventChannels.keySet()) {
@@ -289,6 +330,7 @@ public class FlutterFirebaseFirestorePlugin
       streamHandlers.clear();
     }
 
+    transactions.clear();
     transactionHandlers.clear();
   }
 
@@ -339,6 +381,15 @@ public class FlutterFirebaseFirestorePlugin
     }
   }
 
+  private ExecutorService snapshotDeliveryExecutor(
+      GeneratedAndroidFirebaseFirestore.FirestorePigeonFirebaseApp app) {
+    String key = app.getAppName() + "|" + app.getDatabaseURL();
+    return snapshotDeliveryExecutors.computeIfAbsent(
+        key,
+        ignored ->
+            new ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>()));
+  }
+
   @Override
   public void loadBundle(
       @NonNull GeneratedAndroidFirebaseFirestore.FirestorePigeonFirebaseApp app,
@@ -369,7 +420,8 @@ public class FlutterFirebaseFirestorePlugin
             if (query == null) {
               result.error(
                   new NullPointerException(
-                      "Named query has not been found. Please check it has been loaded properly via loadBundle()."));
+                      "Named query has not been found. Please check it has been loaded properly via"
+                          + " loadBundle()."));
               return;
             }
 
@@ -541,7 +593,8 @@ public class FlutterFirebaseFirestorePlugin
 
     result.success(
         registerEventChannel(
-            METHOD_CHANNEL_NAME + "/snapshotsInSync", new SnapshotsInSyncStreamHandler(firestore)));
+            METHOD_CHANNEL_NAME + "/snapshotsInSync",
+            new SnapshotsInSyncStreamHandler(firestore, snapshotDeliveryExecutor(app))));
   }
 
   @Override
@@ -556,6 +609,7 @@ public class FlutterFirebaseFirestorePlugin
     final TransactionStreamHandler handler =
         new TransactionStreamHandler(
             transaction -> transactions.put(transactionId, transaction),
+            this::removeTransaction,
             firestore,
             transactionId,
             timeout,
@@ -572,8 +626,13 @@ public class FlutterFirebaseFirestorePlugin
       @NonNull GeneratedAndroidFirebaseFirestore.InternalTransactionResult resultType,
       @Nullable List<GeneratedAndroidFirebaseFirestore.InternalTransactionCommand> commands,
       @NonNull GeneratedAndroidFirebaseFirestore.VoidResult result) {
-    Objects.requireNonNull(transactionHandlers.get(transactionId))
-        .receiveTransactionResponse(resultType, commands);
+    OnTransactionResultListener handler = transactionHandlers.get(transactionId);
+    if (handler == null) {
+      result.success();
+      return;
+    }
+
+    handler.receiveTransactionResponse(resultType, commands);
     result.success();
   }
 
@@ -607,6 +666,8 @@ public class FlutterFirebaseFirestorePlugin
                     DocumentSnapshot.ServerTimestampBehavior.NONE));
           } catch (Exception e) {
             ExceptionConverter.sendErrorToFlutter(result, e);
+          } catch (Throwable t) {
+            ExceptionConverter.sendErrorToFlutter(result, new Exception(t));
           }
         });
   }
@@ -764,7 +825,8 @@ public class FlutterFirebaseFirestorePlugin
               result.error(
                   new GeneratedAndroidFirebaseFirestore.FlutterError(
                       "invalid_query",
-                      "An error occurred while parsing query arguments, see native logs for more information. Please report this issue.",
+                      "An error occurred while parsing query arguments, see native logs for more"
+                          + " information. Please report this issue.",
                       null));
               return;
             }
@@ -973,7 +1035,8 @@ public class FlutterFirebaseFirestorePlugin
       result.error(
           new GeneratedAndroidFirebaseFirestore.FlutterError(
               "invalid_query",
-              "An error occurred while parsing query arguments, see native logs for more information. Please report this issue.",
+              "An error occurred while parsing query arguments, see native logs for more"
+                  + " information. Please report this issue.",
               null));
       return;
     }
@@ -986,7 +1049,8 @@ public class FlutterFirebaseFirestorePlugin
                 includeMetadataChanges,
                 PigeonParser.parsePigeonServerTimestampBehavior(
                     options.getServerTimestampBehavior()),
-                PigeonParser.parseListenSource(source))));
+                PigeonParser.parseListenSource(source),
+                snapshotDeliveryExecutor(app))));
   }
 
   @Override

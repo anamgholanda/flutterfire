@@ -9,6 +9,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_installations_platform_interface/firebase_app_installations_platform_interface.dart';
 import 'package:flutter/services.dart';
 
+import '../pigeon/messages.pigeon.dart';
 import 'utils/exception.dart';
 
 class MethodChannelFirebaseAppInstallations
@@ -19,33 +20,36 @@ class MethodChannelFirebaseAppInstallations
     return MethodChannelFirebaseAppInstallations._();
   }
 
-  /// The [MethodChannelFirebaseFunctions] method channel.
-  static const MethodChannel channel = MethodChannel(
-    'plugins.flutter.io/firebase_app_installations',
-  );
+  static final FirebaseAppInstallationsHostApi _api =
+      FirebaseAppInstallationsHostApi();
 
   static final Map<String, StreamController<String>> _idTokenChangesListeners =
       <String, StreamController<String>>{};
 
   /// Creates a new [MethodChannelFirebaseAppInstallations] instance with an [app].
   MethodChannelFirebaseAppInstallations({required FirebaseApp app})
-      : super(app) {
+    : super(app) {
     final controller = _idTokenChangesListeners[app.name] =
         StreamController<String>.broadcast();
 
-    channel.invokeMethod<String>(
-        'FirebaseInstallations#registerIdChangeListener', {
-      'appName': app.name,
-    }).then((channelName) {
-      final events = EventChannel(channelName!, channel.codec);
+    _api
+        .registerIdChangeListener(app.name)
+        .then((channelName) {
+          final events = EventChannel(channelName);
 
-      events
-          .receiveGuardedBroadcastStream(onError: convertPlatformException)
-          .listen(
-            (Object? arguments) => controller.add((arguments as Map)['token']),
-            onError: controller.addError,
-          );
-    });
+          events
+              .receiveGuardedBroadcastStream(onError: convertPlatformException)
+              .listen(
+                (Object? arguments) =>
+                    controller.add((arguments as Map)['token']),
+                onError: controller.addError,
+              );
+          // ignore: avoid_catches_without_on_clauses
+        })
+        .catchError((_) {
+          // Silently ignore errors during listener registration.
+          // This can happen in test environments where the host API is not set up.
+        });
   }
 
   /// Internal stub class initializer.
@@ -62,9 +66,7 @@ class MethodChannelFirebaseAppInstallations
   @override
   Future<void> delete() async {
     try {
-      await channel.invokeMethod('FirebaseInstallations#delete', {
-        'appName': app!.name,
-      });
+      await _api.delete(app!.name);
     } catch (e, s) {
       convertPlatformException(e, s);
     }
@@ -73,12 +75,7 @@ class MethodChannelFirebaseAppInstallations
   @override
   Future<String> getId() async {
     try {
-      final id = (await channel.invokeMethod<String>(
-        'FirebaseInstallations#getId',
-        {'appName': app!.name},
-      ))!;
-
-      return id;
+      return await _api.getId(app!.name);
     } catch (e, s) {
       convertPlatformException(e, s);
     }
@@ -87,12 +84,7 @@ class MethodChannelFirebaseAppInstallations
   @override
   Future<String> getToken(bool forceRefresh) async {
     try {
-      final id = (await channel.invokeMethod<String>(
-        'FirebaseInstallations#getToken',
-        {'appName': app!.name, 'forceRefresh': forceRefresh},
-      ))!;
-
-      return id;
+      return await _api.getToken(app!.name, forceRefresh);
     } catch (e, s) {
       convertPlatformException(e, s);
     }

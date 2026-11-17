@@ -55,7 +55,8 @@ void main() {
 ''';
       final decoded = jsonDecode(response) as Object;
       expect(
-        () => VertexSerialization().parseGenerateContentResponse(decoded),
+        () =>
+            AgentPlatformSerialization().parseGenerateContentResponse(decoded),
         throwsA(
           isA<FirebaseAISdkException>().having(
             (e) => e.message,
@@ -87,7 +88,7 @@ void main() {
 ''';
       final decoded = jsonDecode(response) as Object;
       expect(
-        VertexSerialization().parseGenerateContentResponse(decoded),
+        AgentPlatformSerialization().parseGenerateContentResponse(decoded),
         isA<GenerateContentResponse>(),
       );
     });
@@ -119,8 +120,8 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
@@ -148,6 +149,35 @@ void main() {
             (e) => e.message,
             'message',
             startsWith('Response was blocked due to safety'),
+          ),
+        ),
+      );
+    });
+
+    test('with a blocked prompt omitting safetyRatings (AI-3)', () {
+      const response = '''
+{
+  "promptFeedback": {
+    "blockReason": "PROHIBITED_CONTENT"
+  }
+}
+''';
+      final decoded = jsonDecode(response) as Object;
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
+      expect(generateContentResponse.promptFeedback, isNotNull);
+      expect(
+        generateContentResponse.promptFeedback!.blockReason?.toString(),
+        'prohibitedContent',
+      );
+      expect(generateContentResponse.promptFeedback!.safetyRatings, isEmpty);
+      expect(
+        () => generateContentResponse.text,
+        throwsA(
+          isA<FirebaseAIException>().having(
+            (e) => e.message,
+            'message',
+            startsWith('Response was blocked due to prohibitedContent'),
           ),
         ),
       );
@@ -184,13 +214,15 @@ void main() {
 ''';
       final decoded = jsonDecode(response) as Object;
       expect(
-        () => VertexSerialization().parseGenerateContentResponse(decoded),
+        () =>
+            AgentPlatformSerialization().parseGenerateContentResponse(decoded),
         throwsA(
           isA<ServiceApiNotEnabled>().having(
             (e) => e.message,
             'message',
             startsWith(
-                'The Vertex AI in Firebase SDK requires the Vertex AI in Firebase API'),
+              'Enable Firebase AI Logic in your Firebase project by visiting the Firebase Console',
+            ),
           ),
         ),
       );
@@ -232,7 +264,8 @@ void main() {
 ''';
       final decoded = jsonDecode(response) as Object;
       expect(
-        () => VertexSerialization().parseGenerateContentResponse(decoded),
+        () =>
+            AgentPlatformSerialization().parseGenerateContentResponse(decoded),
         throwsA(
           isA<QuotaExceeded>().having(
             (e) => e.message,
@@ -303,8 +336,8 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
@@ -437,8 +470,8 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
@@ -572,8 +605,8 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
@@ -654,31 +687,36 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
           GenerateContentResponse([
             Candidate(
-                Content(null, []),
-                [
-                  SafetyRating(
-                    HarmCategory.sexuallyExplicit,
-                    HarmProbability.negligible,
-                  ),
-                  SafetyRating(
-                      HarmCategory.hateSpeech, HarmProbability.negligible),
-                  SafetyRating(
-                      HarmCategory.harassment, HarmProbability.negligible),
-                  SafetyRating(
-                    HarmCategory.dangerousContent,
-                    HarmProbability.negligible,
-                  ),
-                ],
-                CitationMetadata([]),
-                FinishReason.safety,
-                null),
+              Content(null, []),
+              [
+                SafetyRating(
+                  HarmCategory.sexuallyExplicit,
+                  HarmProbability.negligible,
+                ),
+                SafetyRating(
+                  HarmCategory.hateSpeech,
+                  HarmProbability.negligible,
+                ),
+                SafetyRating(
+                  HarmCategory.harassment,
+                  HarmProbability.negligible,
+                ),
+                SafetyRating(
+                  HarmCategory.dangerousContent,
+                  HarmProbability.negligible,
+                ),
+              ],
+              CitationMetadata([]),
+              FinishReason.safety,
+              null,
+            ),
           ], null),
         ),
       );
@@ -721,38 +759,61 @@ void main() {
 }
         ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
-          generateContentResponse.text, 'Here is a description of the image:');
+        generateContentResponse.text,
+        'Here is a description of the image:',
+      );
       expect(generateContentResponse.usageMetadata?.totalTokenCount, 1913);
       expect(generateContentResponse.usageMetadata?.toolUsePromptTokenCount, 5);
       expect(
-          generateContentResponse.usageMetadata?.cachedContentTokenCount, 10);
+        generateContentResponse.usageMetadata?.cachedContentTokenCount,
+        10,
+      );
       expect(
-          generateContentResponse
-              .usageMetadata?.cacheTokensDetails?.first.modality,
-          ContentModality.text);
+        generateContentResponse
+            .usageMetadata
+            ?.cacheTokensDetails
+            ?.first
+            .modality,
+        ContentModality.text,
+      );
       expect(
-          generateContentResponse
-              .usageMetadata?.cacheTokensDetails?.first.tokenCount,
-          10);
+        generateContentResponse
+            .usageMetadata
+            ?.cacheTokensDetails
+            ?.first
+            .tokenCount,
+        10,
+      );
       expect(
-          generateContentResponse
-              .usageMetadata?.promptTokensDetails?[1].modality,
-          ContentModality.image);
+        generateContentResponse.usageMetadata?.promptTokensDetails?[1].modality,
+        ContentModality.image,
+      );
       expect(
-          generateContentResponse
-              .usageMetadata?.promptTokensDetails?[1].tokenCount,
-          1806);
+        generateContentResponse
+            .usageMetadata
+            ?.promptTokensDetails?[1]
+            .tokenCount,
+        1806,
+      );
       expect(
-          generateContentResponse
-              .usageMetadata?.candidatesTokensDetails?.first.modality,
-          ContentModality.text);
+        generateContentResponse
+            .usageMetadata
+            ?.candidatesTokensDetails
+            ?.first
+            .modality,
+        ContentModality.text,
+      );
       expect(
-          generateContentResponse
-              .usageMetadata?.candidatesTokensDetails?.first.tokenCount,
-          76);
+        generateContentResponse
+            .usageMetadata
+            ?.candidatesTokensDetails
+            ?.first
+            .tokenCount,
+        76,
+      );
     });
 
     test('countTokens with modality fields returned', () async {
@@ -770,11 +831,13 @@ void main() {
 }
         ''';
       final decoded = jsonDecode(response) as Object;
-      final countTokensResponse =
-          VertexSerialization().parseCountTokensResponse(decoded);
+      final countTokensResponse = AgentPlatformSerialization()
+          .parseCountTokensResponse(decoded);
       expect(countTokensResponse.totalTokens, 1837);
-      expect(countTokensResponse.promptTokensDetails?.first.modality,
-          ContentModality.image);
+      expect(
+        countTokensResponse.promptTokensDetails?.first.modality,
+        ContentModality.image,
+      );
       expect(countTokensResponse.promptTokensDetails?.first.tokenCount, 1806);
     });
 
@@ -804,11 +867,13 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(generateContentResponse.text, 'Initial text And more text');
-      expect(generateContentResponse.candidates.single.text,
-          'Initial text And more text');
+      expect(
+        generateContentResponse.candidates.single.text,
+        'Initial text And more text',
+      );
     });
 
     test('url context', () {
@@ -889,16 +954,20 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       final candidate = generateContentResponse.candidates.first;
       final urlContextMetadata = candidate.urlContextMetadata;
       expect(urlContextMetadata, isNotNull);
       expect(urlContextMetadata!.urlMetadata, hasLength(1));
-      expect(urlContextMetadata.urlMetadata.first.retrievedUrl,
-          Uri.parse('https://berkshirehathaway.com'));
-      expect(urlContextMetadata.urlMetadata.first.urlRetrievalStatus,
-          UrlRetrievalStatus.success);
+      expect(
+        urlContextMetadata.urlMetadata.first.retrievedUrl,
+        Uri.parse('https://berkshirehathaway.com'),
+      );
+      expect(
+        urlContextMetadata.urlMetadata.first.urlRetrievalStatus,
+        UrlRetrievalStatus.success,
+      );
       final usageMetadata = generateContentResponse.usageMetadata;
       expect(usageMetadata, isNotNull);
       expect(usageMetadata!.toolUsePromptTokenCount, 34);
@@ -1030,20 +1099,28 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       final urlContextMetadata =
           generateContentResponse.candidates.first.urlContextMetadata;
       expect(urlContextMetadata, isNotNull);
       expect(urlContextMetadata!.urlMetadata, hasLength(3));
-      expect(urlContextMetadata.urlMetadata[2].retrievedUrl,
-          Uri.parse('https://a-completely-non-existent-url-for-testing.org'));
-      expect(urlContextMetadata.urlMetadata[2].urlRetrievalStatus,
-          UrlRetrievalStatus.error);
-      expect(urlContextMetadata.urlMetadata[1].retrievedUrl,
-          Uri.parse('https://ai.google.dev'));
-      expect(urlContextMetadata.urlMetadata[1].urlRetrievalStatus,
-          UrlRetrievalStatus.success);
+      expect(
+        urlContextMetadata.urlMetadata[2].retrievedUrl,
+        Uri.parse('https://a-completely-non-existent-url-for-testing.org'),
+      );
+      expect(
+        urlContextMetadata.urlMetadata[2].urlRetrievalStatus,
+        UrlRetrievalStatus.error,
+      );
+      expect(
+        urlContextMetadata.urlMetadata[1].retrievedUrl,
+        Uri.parse('https://ai.google.dev'),
+      );
+      expect(
+        urlContextMetadata.urlMetadata[1].urlRetrievalStatus,
+        UrlRetrievalStatus.success,
+      );
     });
 
     test('url context missing retrievedUrl', () {
@@ -1105,15 +1182,84 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       final urlContextMetadata =
           generateContentResponse.candidates.first.urlContextMetadata;
       expect(urlContextMetadata, isNotNull);
       expect(urlContextMetadata!.urlMetadata, hasLength(1));
       expect(urlContextMetadata.urlMetadata[0].retrievedUrl, isNull);
-      expect(urlContextMetadata.urlMetadata[0].urlRetrievalStatus,
-          UrlRetrievalStatus.error);
+      expect(
+        urlContextMetadata.urlMetadata[0].urlRetrievalStatus,
+        UrlRetrievalStatus.error,
+      );
+    });
+
+    test('url context missing urlRetrievalStatus', () {
+      final jsonResponse = {
+        'candidates': [
+          {
+            'content': {
+              'role': 'model',
+              'parts': [
+                {'text': 'hello'},
+              ],
+            },
+            'finishReason': 'STOP',
+            'urlContextMetadata': {
+              'urlMetadata': [
+                {'retrievedUrl': 'https://example.com'},
+              ],
+            },
+          },
+        ],
+      };
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(jsonResponse);
+      expect(generateContentResponse.text, 'hello');
+      final urlMetadata = generateContentResponse
+          .candidates
+          .first
+          .urlContextMetadata!
+          .urlMetadata
+          .single;
+      expect(urlMetadata.retrievedUrl, Uri.parse('https://example.com'));
+      expect(urlMetadata.urlRetrievalStatus, UrlRetrievalStatus.unspecified);
+    });
+
+    test('url context null urlRetrievalStatus', () {
+      final jsonResponse = {
+        'candidates': [
+          {
+            'content': {
+              'role': 'model',
+              'parts': [
+                {'text': 'hello'},
+              ],
+            },
+            'finishReason': 'STOP',
+            'urlContextMetadata': {
+              'urlMetadata': [
+                {
+                  'retrievedUrl': 'https://example.com',
+                  'urlRetrievalStatus': null,
+                },
+              ],
+            },
+          },
+        ],
+      };
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(jsonResponse);
+      expect(generateContentResponse.text, 'hello');
+      final urlMetadata = generateContentResponse
+          .candidates
+          .first
+          .urlContextMetadata!
+          .urlMetadata
+          .single;
+      expect(urlMetadata.retrievedUrl, Uri.parse('https://example.com'));
+      expect(urlMetadata.urlRetrievalStatus, UrlRetrievalStatus.unspecified);
     });
 
     test('parses json with google maps grounding chunk', () {
@@ -1122,8 +1268,8 @@ void main() {
           {
             'content': {
               'parts': [
-                {'text': 'This is a maps response.'}
-              ]
+                {'text': 'This is a maps response.'},
+              ],
             },
             'finishReason': 'STOP',
             'groundingMetadata': {
@@ -1133,16 +1279,16 @@ void main() {
                     'uri': 'https://maps.google.com/?cid=123',
                     'title': 'Google HQ',
                     'placeId': 'ChIJS5dFe_cZzosR26ZvwqWaMAM',
-                  }
-                }
+                  },
+                },
               ],
-            }
-          }
-        ]
+            },
+          },
+        ],
       };
 
-      final response =
-          VertexSerialization().parseGenerateContentResponse(jsonResponse);
+      final response = AgentPlatformSerialization()
+          .parseGenerateContentResponse(jsonResponse);
       final groundingMetadata = response.candidates.first.groundingMetadata;
 
       expect(groundingMetadata, isNotNull);
@@ -1151,6 +1297,34 @@ void main() {
       expect(groundingChunk.maps?.title, 'Google HQ');
       expect(groundingChunk.maps?.placeId, 'ChIJS5dFe_cZzosR26ZvwqWaMAM');
       expect(groundingChunk.web, isNull);
+    });
+
+    test('preserves webSearchQueries when decoded from JSON string (AI-6)', () {
+      const responseJson = '''
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [{"text": "Search result"}]
+      },
+      "finishReason": "STOP",
+      "groundingMetadata": {
+        "webSearchQueries": ["flutter", "firebase"]
+      }
+    }
+  ]
+}
+''';
+      final decoded = jsonDecode(responseJson) as Object;
+      final response = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
+      final groundingMetadata = response.candidates.first.groundingMetadata;
+      expect(groundingMetadata, isNotNull);
+      expect(groundingMetadata!.webSearchQueries, <String>[
+        'flutter',
+        'firebase',
+      ]);
     });
 
     test('with unknown safety ratings', () async {
@@ -1203,30 +1377,22 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
           GenerateContentResponse(
             [
               Candidate(
-                Content.model([
-                  const TextPart('Some text'),
-                ]),
+                Content.model([const TextPart('Some text')]),
                 [
-                  SafetyRating(
-                    HarmCategory.harassment,
-                    HarmProbability.medium,
-                  ),
+                  SafetyRating(HarmCategory.harassment, HarmProbability.medium),
                   SafetyRating(
                     HarmCategory.dangerousContent,
                     HarmProbability.unknown,
                   ),
-                  SafetyRating(
-                    HarmCategory.unknown,
-                    HarmProbability.high,
-                  ),
+                  SafetyRating(HarmCategory.unknown, HarmProbability.high),
                 ],
                 null,
                 FinishReason.stop,
@@ -1234,18 +1400,12 @@ void main() {
               ),
             ],
             PromptFeedback(null, null, [
-              SafetyRating(
-                HarmCategory.harassment,
-                HarmProbability.medium,
-              ),
+              SafetyRating(HarmCategory.harassment, HarmProbability.medium),
               SafetyRating(
                 HarmCategory.dangerousContent,
                 HarmProbability.unknown,
               ),
-              SafetyRating(
-                HarmCategory.unknown,
-                HarmProbability.high,
-              ),
+              SafetyRating(HarmCategory.unknown, HarmProbability.high),
             ]),
           ),
         ),
@@ -1274,27 +1434,78 @@ void main() {
 }
 ''';
       final decoded = jsonDecode(response) as Object;
-      final generateContentResponse =
-          VertexSerialization().parseGenerateContentResponse(decoded);
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
       expect(
         generateContentResponse,
         matchesGenerateContentResponse(
-          GenerateContentResponse(
-            [
-              Candidate(
-                Content.model([
-                  const FunctionCall('current_time', {}),
-                ]),
-                null,
-                null,
-                FinishReason.stop,
-                null,
-              ),
-            ],
-            null,
-          ),
+          GenerateContentResponse([
+            Candidate(
+              Content.model([const FunctionCall('current_time', {})]),
+              null,
+              null,
+              FinishReason.stop,
+              null,
+            ),
+          ], null),
         ),
       );
+    });
+
+    test('with a code execution result that omits output', () {
+      const response = '''
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "executableCode": {
+              "language": "PYTHON",
+              "code": "x = 1 + 1"
+            }
+          },
+          {
+            "codeExecutionResult": {
+              "outcome": "OUTCOME_OK"
+            }
+          },
+          {
+            "text": "The answer is 2."
+          }
+        ]
+      },
+      "finishReason": "STOP"
+    }
+  ]
+}
+''';
+      final decoded = jsonDecode(response) as Object;
+      final generateContentResponse = AgentPlatformSerialization()
+          .parseGenerateContentResponse(decoded);
+      expect(
+        generateContentResponse,
+        matchesGenerateContentResponse(
+          GenerateContentResponse([
+            Candidate(
+              Content.model([
+                ExecutableCodePart(
+                  language: CodeLanguage.python,
+                  code: 'x = 1 + 1',
+                ),
+                CodeExecutionResultPart(outcome: Outcome.ok, output: ''),
+                const TextPart('The answer is 2.'),
+              ]),
+              null,
+              null,
+              FinishReason.stop,
+              null,
+            ),
+          ], null),
+        ),
+      );
+      expect(generateContentResponse.text, 'The answer is 2.');
     });
   });
 
@@ -1331,10 +1542,15 @@ void main() {
           'API key not valid. Please pass a valid API key.',
         ),
       );
-      expect(() => VertexSerialization().parseGenerateContentResponse(decoded),
-          expectedThrow);
-      expect(() => VertexSerialization().parseCountTokensResponse(decoded),
-          expectedThrow);
+      expect(
+        () =>
+            AgentPlatformSerialization().parseGenerateContentResponse(decoded),
+        expectedThrow,
+      );
+      expect(
+        () => AgentPlatformSerialization().parseCountTokensResponse(decoded),
+        expectedThrow,
+      );
     });
 
     test('for unsupported user location', () async {
@@ -1361,10 +1577,15 @@ void main() {
           'User location is not supported for the API use.',
         ),
       );
-      expect(() => VertexSerialization().parseGenerateContentResponse(decoded),
-          expectedThrow);
-      expect(() => VertexSerialization().parseCountTokensResponse(decoded),
-          expectedThrow);
+      expect(
+        () =>
+            AgentPlatformSerialization().parseGenerateContentResponse(decoded),
+        expectedThrow,
+      );
+      expect(
+        () => AgentPlatformSerialization().parseCountTokensResponse(decoded),
+        expectedThrow,
+      );
     });
 
     test('for general server errors', () async {
@@ -1394,10 +1615,15 @@ void main() {
           ),
         ),
       );
-      expect(() => VertexSerialization().parseGenerateContentResponse(decoded),
-          expectedThrow);
-      expect(() => VertexSerialization().parseCountTokensResponse(decoded),
-          expectedThrow);
+      expect(
+        () =>
+            AgentPlatformSerialization().parseGenerateContentResponse(decoded),
+        expectedThrow,
+      );
+      expect(
+        () => AgentPlatformSerialization().parseCountTokensResponse(decoded),
+        expectedThrow,
+      );
     });
   });
 }

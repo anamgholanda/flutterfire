@@ -7,20 +7,20 @@
 
 import PackageDescription
 
-let library_version = "0.9.2-2"
-let firebase_sdk_version: Version = "12.13.0"
+let firebaseSdkVersion: Version = "13.2.0"
 
 let package = Package(
   name: "firebase_in_app_messaging",
   platforms: [
-    .iOS("15.0"),
+    .iOS("15.0")
   ],
   products: [
-    .library(name: "firebase-in-app-messaging", targets: ["firebase_in_app_messaging"]),
+    .library(name: "firebase-in-app-messaging", targets: ["firebase_in_app_messaging"])
   ],
   dependencies: [
-    .package(url: "https://github.com/firebase/firebase-ios-sdk", from: firebase_sdk_version),
+    .package(url: "https://github.com/firebase/firebase-ios-sdk", exact: firebaseSdkVersion),
     .package(name: "firebase_core", path: "../firebase_core"),
+    .package(name: "FlutterFramework", path: "../FlutterFramework"),
   ],
   targets: [
     .target(
@@ -28,15 +28,11 @@ let package = Package(
       dependencies: [
         .product(name: "FirebaseInAppMessaging-Beta", package: "firebase-ios-sdk"),
         .product(name: "firebase-core", package: "firebase_core"),
+        .product(name: "FlutterFramework", package: "FlutterFramework"),
       ],
       resources: [
-        .process("Resources"),
-      ],
-      cSettings: [
-        .headerSearchPath("include"),
-        .define("LIBRARY_VERSION", to: "\"\(library_version)\""),
-        .define("LIBRARY_NAME", to: "\"flutter-fire-fiam\""),
+        .process("Resources")
       ]
-    ),
+    )
   ]
 )

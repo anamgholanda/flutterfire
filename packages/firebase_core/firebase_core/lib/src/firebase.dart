@@ -29,8 +29,8 @@ class Firebase {
   }
 
   /// Initializes a new [FirebaseApp] instance by [name] and [options] and
-  /// returns the created app. This method should be called before any usage of
-  /// FlutterFire plugins.
+  /// returns the created app. This method should be called before any usage of FlutterFire
+  /// plugins.
   ///
   /// If a [demoProjectId] is provided, a new [FirebaseApp] instance will be
   /// initialized with a set of default options for demo projects, overriding
@@ -69,9 +69,9 @@ class Firebase {
       // for backwards compatibility and simply override the user-provided
       // options.
       resolvedOptions = FirebaseOptions(
-        apiKey: '12345',
+        apiKey: 'ADemoProjectApiKey000000000000000000000',
         appId: '1:1:$platformString:1',
-        messagingSenderId: '',
+        messagingSenderId: '1',
         projectId: demoProjectId,
       );
       // Now fall through to the normal initialization logic.

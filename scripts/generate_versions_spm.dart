@@ -10,30 +10,16 @@ import 'dart:io';
 import 'package:cli_util/cli_logging.dart' as logging;
 import 'package:yaml/yaml.dart';
 
-// Used to generate a simple txt file for Package.swift file to parse in order to use correct firebase-ios-sdk version
+import 'firebase_sdk_version_spm.dart';
+
+// Writes scripts/firebase_sdk_version_spm.dart into each plugin Package.swift.
 
 void main(List<String> args) async {
   final workspace = await getMelosWorkspace();
-  // get version from core
-  final firebaseCorePackage = workspace.filteredPackages.values
-      .firstWhere((package) => package.name == 'firebase_core');
 
-  final firebaseCoreIosVersionFile = File(
-    '${firebaseCorePackage.path}/ios/firebase_sdk_version.rb',
-  );
-
-  final firebaseiOSVersion = getFirebaseiOSVersion(firebaseCoreIosVersionFile);
-
-  // Update hard-coded versions in all plugin Package.swift files
-  final firebaseCoreVersion = loadYaml(
-    File('${firebaseCorePackage.path}/pubspec.yaml').readAsStringSync(),
-  )['version']
-      .toString();
-  updatePluginPackageSwiftVersions(
-    workspace,
-    firebaseiOSVersion,
-    firebaseCoreVersion,
-  );
+  // Update hard-coded versions in all plugin Package.swift files.
+  // CocoaPods keeps its own pin in firebase_sdk_version.rb.
+  updatePluginPackageSwiftVersions(workspace, firebaseSpmSdkVersion);
   // Update plugin version in Constants.swift for pure Swift plugins. Unable to pass macros in pure Swift implementations
   updateLibraryVersionPureSwiftPlugins();
 }
@@ -55,27 +41,9 @@ Future<melos.MelosWorkspace> getMelosWorkspace() async {
   return workspace;
 }
 
-String getFirebaseiOSVersion(File firebaseCoreIosSdkVersion) {
-  if (firebaseCoreIosSdkVersion.existsSync()) {
-    final content = firebaseCoreIosSdkVersion.readAsStringSync();
-    final versionMatch = RegExp(r"'(\d+\.\d+\.\d+)'").firstMatch(content);
-
-    if (versionMatch != null && versionMatch.group(1) != null) {
-      return versionMatch.group(1)!;
-    } else {
-      throw Exception(
-        'Firebase iOS SDK version not found in firebase_sdk_version.rb.',
-      );
-    }
-  } else {
-    throw Exception('firebase_sdk_version.rb file does not exist.');
-  }
-}
-
 void updatePluginPackageSwiftVersions(
   melos.MelosWorkspace workspace,
   String firebaseiOSVersion,
-  String firebaseCoreVersion,
 ) {
   for (final package in workspace.filteredPackages.values) {
     for (final platform in ['ios', 'macos']) {
@@ -86,19 +54,13 @@ void updatePluginPackageSwiftVersions(
 
       var content = packageSwiftFile.readAsStringSync();
 
-      // Update firebase_sdk_version
+      // Update firebaseSdkVersion (matches Package.swift naming).
       content = content.replaceAll(
-        RegExp('let firebase_sdk_version: Version = "[^"]+"'),
-        'let firebase_sdk_version: Version = "$firebaseiOSVersion"',
+        RegExp(r'let firebaseSdkVersion: Version = "[^"]+"'),
+        'let firebaseSdkVersion: Version = "$firebaseiOSVersion"',
       );
 
-      // Update shared_spm_version
-      content = content.replaceAll(
-        RegExp('let shared_spm_version: Version = "[^"]+"'),
-        'let shared_spm_version: Version = "$firebaseCoreVersion-firebase-core-swift"',
-      );
-
-      // Update library_version or library_version_string from pubspec version
+      // Update libraryVersion / libraryVersionString from pubspec version.
       final pubspecFile = File('${package.path}/pubspec.yaml');
       if (pubspecFile.existsSync()) {
         final pubspecYaml = loadYaml(pubspecFile.readAsStringSync());
@@ -106,12 +68,12 @@ void updatePluginPackageSwiftVersions(
         if (version != null) {
           final spmVersion = version.replaceAll('+', '-');
           content = content.replaceAll(
-            RegExp('let library_version_string = "[^"]+"'),
-            'let library_version_string = "$spmVersion"',
+            RegExp(r'let libraryVersionString = "[^"]+"'),
+            'let libraryVersionString = "$spmVersion"',
           );
           content = content.replaceAll(
-            RegExp('let library_version = "[^"]+"'),
-            'let library_version = "$spmVersion"',
+            RegExp(r'let libraryVersion = "[^"]+"'),
+            'let libraryVersion = "$spmVersion"',
           );
         }
       }
@@ -125,11 +87,15 @@ void updatePluginPackageSwiftVersions(
 void updateLibraryVersionPureSwiftPlugins() {
   // Packages that require updating library versions
   const packages = [
-    'firebase_ml_model_downloader',
     'firebase_app_installations',
     'cloud_functions',
     'firebase_remote_config',
     'firebase_app_check',
+    'firebase_in_app_messaging',
+    'firebase_crashlytics',
+    'firebase_core',
+    'firebase_ai',
+    'cloud_firestore',
   ];
 
   for (final package in packages) {

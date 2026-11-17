@@ -23,18 +23,12 @@ abstract class CollectionReference<T extends Object?> implements Query<T> {
 
   /// Returns a `DocumentReference` with an auto-generated ID, after
   /// populating it with provided [data].
-  ///
-  /// The unique key generated is prefixed with a client-generated timestamp
-  /// so that the resulting list will be chronologically-sorted.
   Future<DocumentReference<T>> add(T data);
 
   /// {@template cloud_firestore.collection_reference.doc}
   /// Returns a `DocumentReference` with the provided path.
   ///
   /// If no [path] is provided, an auto-generated ID is used.
-  ///
-  /// The unique key generated is prefixed with a client-generated timestamp
-  /// so that the resulting list will be chronologically-sorted.
   /// {@endtemplate}
   DocumentReference<T> doc([String? path]);
 
@@ -130,11 +124,7 @@ class _JsonCollectionReference extends _JsonQuery
     required FromFirestore<R> fromFirestore,
     required ToFirestore<R> toFirestore,
   }) {
-    return _WithConverterCollectionReference(
-      this,
-      fromFirestore,
-      toFirestore,
-    );
+    return _WithConverterCollectionReference(this, fromFirestore, toFirestore);
   }
 
   @override
@@ -156,7 +146,8 @@ class _JsonCollectionReference extends _JsonQuery
 /// inherited from [Query]).
 @immutable
 class _WithConverterCollectionReference<T extends Object?>
-    extends _WithConverterQuery<T> implements CollectionReference<T> {
+    extends _WithConverterQuery<T>
+    implements CollectionReference<T> {
   _WithConverterCollectionReference(
     CollectionReference<Map<String, dynamic>> collectionReference,
     FromFirestore<T> fromFirestore,
@@ -164,7 +155,7 @@ class _WithConverterCollectionReference<T extends Object?>
   ) : super(collectionReference, fromFirestore, toFirestore);
 
   CollectionReference<Map<String, dynamic>>
-      get _originalCollectionReferenceQuery {
+  get _originalCollectionReferenceQuery {
     return super._originalQuery as CollectionReference<Map<String, dynamic>>;
   }
 
@@ -224,11 +215,11 @@ class _WithConverterCollectionReference<T extends Object?>
 
   @override
   int get hashCode => Object.hash(
-        runtimeType,
-        _originalCollectionReferenceQuery,
-        _fromFirestore,
-        _toFirestore,
-      );
+    runtimeType,
+    _originalCollectionReferenceQuery,
+    _fromFirestore,
+    _toFirestore,
+  );
 
   @override
   String toString() => 'CollectionReference<$T>($path)';

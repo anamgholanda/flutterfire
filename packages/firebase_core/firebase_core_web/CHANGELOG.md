@@ -1,3 +1,57 @@
+## 4.2.0
+
+ - **FIX**(core,appcheck,web): start when the browser blocks web storage ([#18946](https://github.com/firebase/flutterfire/issues/18946)). ([229e08e8](https://github.com/firebase/flutterfire/commit/229e08e8f0b197c1eef240db73a716d7f948c2a1))
+ - **FEAT**(core): bump Firebase JS SDK to 13.3.0 ([#18961](https://github.com/firebase/flutterfire/issues/18961)). ([38d67566](https://github.com/firebase/flutterfire/commit/38d67566319392c4cda3563bbb5aca4c41491589))
+ - **FEAT**(android): migrate plugins to built-in Kotlin on Flutter 3.44 ([#18922](https://github.com/firebase/flutterfire/issues/18922)). ([1abe0561](https://github.com/firebase/flutterfire/commit/1abe05614d03f22782f597f847c1fc9c8c57f016))
+ - **FEAT**(core): bump Firebase JS SDK to 13.2.0 ([#18903](https://github.com/firebase/flutterfire/issues/18903)). ([c07bff58](https://github.com/firebase/flutterfire/commit/c07bff5834a3cdd101c51ee022202f3b3644e597))
+
+## 4.1.0
+
+ - **FIX**(core,web): honour flutterfire_ignore_scripts under dart2wasm ([#18806](https://github.com/firebase/flutterfire/issues/18806)). ([41a95ba2](https://github.com/firebase/flutterfire/commit/41a95ba26cf9e9c13738292a96ee627d06e18c43))
+ - **FEAT**(core): bump Firebase JS SDK to 13.1.0 ([#18851](https://github.com/firebase/flutterfire/issues/18851)). ([93e525b4](https://github.com/firebase/flutterfire/commit/93e525b4ff47942f5e5ee7b255d02160b3596ad6))
+ - **FEAT**: register flutter-fire-ai and flutter-fire-dc platform versions and fix web late registration ([#18707](https://github.com/firebase/flutterfire/issues/18707)). ([569c39e7](https://github.com/firebase/flutterfire/commit/569c39e71d32f1bef77b1cea4c0d1389374be2b5))
+
+## 4.0.0
+
+> Note: This release has breaking changes.
+
+ - **FIX**(core,web): skip hot-restart listener cleanup in profile mode ([#18729](https://github.com/firebase/flutterfire/issues/18729)). ([20f2cbfd](https://github.com/firebase/flutterfire/commit/20f2cbfd6fc65ae6fc139d25c83ebc112789b060))
+ - **BREAKING** **FEAT**: bump Firebase JS SDK to 13.0.0 ([#18768](https://github.com/firebase/flutterfire/issues/18768)). ([88d7bc65](https://github.com/firebase/flutterfire/commit/88d7bc65513b0c61496ea1e74804695587050480))
+
+## 3.12.0
+
+ - **FIX**(auth,web): convert Auth errors that omit customData without throwing ([#18686](https://github.com/firebase/flutterfire/issues/18686)). ([5e518361](https://github.com/firebase/flutterfire/commit/5e518361ce7f94923437d8b0e41add7ca75083ef))
+ - **FIX**(core,web): compile isA checks on Dart < 3.12 ([#18612](https://github.com/firebase/flutterfire/issues/18612)). ([3bd7c069](https://github.com/firebase/flutterfire/commit/3bd7c069f791f5482f79e6f80cf6fd833b6245f8))
+ - **FEAT**(core): bump Firebase JS SDK to 12.19.0 ([#18684](https://github.com/firebase/flutterfire/issues/18684)). ([4988ec5b](https://github.com/firebase/flutterfire/commit/4988ec5b2a6349f59ca37d32ed08a4efa6ba4a27))
+ - **FEAT**(firebase_core_web): decouple foundation imports and fix JS SDK interop ([#18624](https://github.com/firebase/flutterfire/issues/18624)). ([4fd99824](https://github.com/firebase/flutterfire/commit/4fd9982426d33c255ef516c6919ede835263cf37))
+
+## 3.11.0
+
+ - **FIX**(core,web): keep App Check registered for secondary Firebase apps ([#18557](https://github.com/firebase/flutterfire/issues/18557)). ([1345dbb3](https://github.com/firebase/flutterfire/commit/1345dbb38af36c2d1c3f6582f474f5520a185021))
+ - **FIX**(core,web): preserve non-JavaScript app errors ([#18552](https://github.com/firebase/flutterfire/issues/18552)). ([e6943a68](https://github.com/firebase/flutterfire/commit/e6943a682f2a6e93076cd068d49ee7c47738c079))
+ - **FEAT**(core): bump Firebase JS SDK to 12.18.0 ([#18598](https://github.com/firebase/flutterfire/issues/18598)). ([f29565bb](https://github.com/firebase/flutterfire/commit/f29565bb191ddc32973f5b3be9fb4173ae3896b4))
+
+## 3.10.0
+
+ - **FIX**(core,web): load firebase-app.js before component bundles to avoid WebKit import race ([#18443](https://github.com/firebase/flutterfire/issues/18443)). ([4b731aed](https://github.com/firebase/flutterfire/commit/4b731aed0a1346070d8548c342e2e4b012844d58))
+ - **FEAT**(appcheck): rCE provider api update ([#18505](https://github.com/firebase/flutterfire/issues/18505)). ([a56649a4](https://github.com/firebase/flutterfire/commit/a56649a41539c559a08e4f566128db8de390c284))
+ - **FEAT**(core): bump Firebase web SDK to 12.16.0 ([#18466](https://github.com/firebase/flutterfire/issues/18466)). ([ff707788](https://github.com/firebase/flutterfire/commit/ff707788d48cf73e23e25b8c66205d6758a5022e))
+ - **DOCS**: fix code snippets that do not compile ([#18468](https://github.com/firebase/flutterfire/issues/18468)). ([85cbdcab](https://github.com/firebase/flutterfire/commit/85cbdcabe0f0f6230f63ebc4018c7358353b15a4))
+
+## 3.9.1
+
+ - **FIX**: update `firebase_core_platform_interface` constraint to support `8.0.0`.
+
+## 3.9.0
+
+ - **FEAT**(appcheck): appcheck reCAPTCHA mobile support (gradually rolling out) ([#18261](https://github.com/firebase/flutterfire/issues/18261)). ([036a860a](https://github.com/firebase/flutterfire/commit/036a860a0e66d46b5c57eb3df3a0f9e5846ef00b))
+ - **FEAT**(core): bump Firebase web SDK to 12.15.0 ([#18376](https://github.com/firebase/flutterfire/issues/18376)). ([22eb4d5d](https://github.com/firebase/flutterfire/commit/22eb4d5d0f3f14207e080e9c9fc8373052258ef4))
+ - **FEAT**(core): Add Recaptcha Site Key to FirebaseOptions ([#18334](https://github.com/firebase/flutterfire/issues/18334)). ([57be7027](https://github.com/firebase/flutterfire/commit/57be702778d34b9b7e86b40817d93acaec4c3ca4))
+
+## 3.8.0
+
+ - **FEAT**(core): bump Firebase web SDK to 12.14.0 ([#18331](https://github.com/firebase/flutterfire/issues/18331)). ([3f31a88a](https://github.com/firebase/flutterfire/commit/3f31a88ab6ad96914f427e292b919b6465cf4996))
+
 ## 3.7.0
 
  - **FEAT**: bump Firebase JS SDK to 12.13.0 ([#18274](https://github.com/firebase/flutterfire/issues/18274)). ([bb8ad546](https://github.com/firebase/flutterfire/commit/bb8ad546f114146b6e1cd26c3296825e2964745d))

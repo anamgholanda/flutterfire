@@ -8,26 +8,29 @@ import 'package:firebase_messaging_platform_interface/firebase_messaging_platfor
 /// A class representing a message sent from Firebase Cloud Messaging.
 class RemoteMessage {
   // ignore: public_member_api_docs
-  const RemoteMessage(
-      {this.senderId,
-      this.category,
-      this.collapseKey,
-      this.contentAvailable = false,
-      this.data = const <String, dynamic>{},
-      this.from,
-      this.messageId,
-      this.messageType,
-      this.mutableContent = false,
-      this.notification,
-      this.sentTime,
-      this.threadId,
-      this.ttl});
+  const RemoteMessage({
+    this.senderId,
+    this.category,
+    this.actionIdentifier,
+    this.collapseKey,
+    this.contentAvailable = false,
+    this.data = const <String, dynamic>{},
+    this.from,
+    this.messageId,
+    this.messageType,
+    this.mutableContent = false,
+    this.notification,
+    this.sentTime,
+    this.threadId,
+    this.ttl,
+  });
 
   /// Constructs a [RemoteMessage] from a raw Map.
   factory RemoteMessage.fromMap(Map<String, dynamic> map) {
     return RemoteMessage(
       senderId: map['senderId'],
       category: map['category'],
+      actionIdentifier: map['actionIdentifier'],
       collapseKey: map['collapseKey'],
       contentAvailable: map['contentAvailable'] ?? false,
       data: map['data'] == null
@@ -41,12 +44,14 @@ class RemoteMessage {
       notification: map['notification'] == null
           ? null
           : RemoteNotification.fromMap(
-              Map<String, dynamic>.from(map['notification'])),
+              Map<String, dynamic>.from(map['notification']),
+            ),
       // Note: using toString on sentTime as it can be an int or string when being sent from native.
       sentTime: map['sentTime'] == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(
-              int.parse(map['sentTime'].toString())),
+              int.parse(map['sentTime'].toString()),
+            ),
       threadId: map['threadId'],
       ttl: map['ttl'],
     );
@@ -57,6 +62,7 @@ class RemoteMessage {
     return <String, dynamic>{
       'senderId': senderId,
       'category': category,
+      'actionIdentifier': actionIdentifier,
       'collapseKey': collapseKey,
       'contentAvailable': contentAvailable,
       'data': data,
@@ -76,6 +82,9 @@ class RemoteMessage {
 
   /// The iOS category this notification is assigned to.
   final String? category;
+
+  /// The Apple notification action identifier used to open the app.
+  final String? actionIdentifier;
 
   /// The collapse key a message was sent with. Used to override existing messages with the same key.
   final String? collapseKey;

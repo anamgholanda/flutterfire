@@ -4,6 +4,9 @@
 // found in the LICENSE file.
 
 @TestOn('browser')
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:firebase_core_web/firebase_core_web.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,13 +18,14 @@ void main() {
     });
 
     test(
-        'should throw exception if no default app is available & no options are provided',
-        () async {
-      await expectLater(
-        FirebasePlatform.instance.initializeApp,
-        throwsAssertionError,
-      );
-    });
+      'should throw exception if no default app is available & no options are provided',
+      () async {
+        await expectLater(
+          FirebasePlatform.instance.initializeApp,
+          throwsAssertionError,
+        );
+      },
+    );
   });
 
   group('.initializeApp()', () {
@@ -30,13 +34,15 @@ void main() {
     });
 
     group('secondary apps', () {
-      test('should throw exception if no options are provided with a named app',
-          () async {
-        await expectLater(
-          () => FirebasePlatform.instance.initializeApp(name: 'foo'),
-          throwsAssertionError,
-        );
-      });
+      test(
+        'should throw exception if no options are provided with a named app',
+        () async {
+          await expectLater(
+            () => FirebasePlatform.instance.initializeApp(name: 'foo'),
+            throwsAssertionError,
+          );
+        },
+      );
     });
   });
 
@@ -47,6 +53,27 @@ void main() {
 
     test('should return empty list when Firebase is not initialized', () {
       expect(FirebasePlatform.instance.apps, isEmpty);
+    });
+  });
+
+  group('.app()', () {
+    test('preserves core-not-initialized errors', () {
+      JSObject throwDartError() {
+        throw StateError('Cannot read properties of undefined');
+      }
+
+      final firebaseCore = JSObject();
+      firebaseCore['getApp'] = throwDartError.toJS;
+      globalContext['firebase_core'] = firebaseCore;
+
+      expect(
+        () => FirebaseCoreWeb().app(),
+        throwsA(
+          isA<FirebaseException>()
+              .having((error) => error.plugin, 'plugin', 'core')
+              .having((error) => error.code, 'code', 'not-initialized'),
+        ),
+      );
     });
   });
 }

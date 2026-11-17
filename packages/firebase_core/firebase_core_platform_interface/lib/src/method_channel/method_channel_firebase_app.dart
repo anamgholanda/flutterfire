@@ -11,7 +11,7 @@ part of '../../firebase_core_platform_interface.dart';
 /// instance, for example:
 ///
 /// ```dart
-/// Firebase.app('SecondaryApp`);
+/// Firebase.app('SecondaryApp');
 /// ```
 class MethodChannelFirebaseApp extends FirebaseAppPlatform {
   // ignore: public_member_api_docs
@@ -19,9 +19,9 @@ class MethodChannelFirebaseApp extends FirebaseAppPlatform {
     String name,
     FirebaseOptions options, {
     bool? isAutomaticDataCollectionEnabled,
-  })  : _isAutomaticDataCollectionEnabled =
-            isAutomaticDataCollectionEnabled ?? false,
-        super(name, options);
+  }) : _isAutomaticDataCollectionEnabled =
+           isAutomaticDataCollectionEnabled ?? false,
+       super(name, options);
 
   /// Keeps track of whether this app has been deleted by the user.
   bool _isDeleted = false;
@@ -52,7 +52,7 @@ class MethodChannelFirebaseApp extends FirebaseAppPlatform {
     await _api.delete(name);
 
     MethodChannelFirebase.appInstances.remove(name);
-    FirebasePluginPlatform._constantsForPluginApps.remove(name);
+    FirebasePlugin._constantsForPluginApps.remove(name);
     _isDeleted = true;
   }
 

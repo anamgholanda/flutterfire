@@ -7,17 +7,28 @@ version: 1.0.0+1
 resolution: workspace
 
 environment:
-  sdk: '^3.6.0'
-  flutter: '>=3.27.0'
+  sdk: '^3.12.0'
+  flutter: '>=3.44.0'
 
 dependencies:
-  firebase_core: ^4.9.0
-  firebase_app_installations: ^0.4.2+2
+  firebase_core: ^5.1.0
+  firebase_app_installations: ^0.5.1
   flutter:
     sdk: flutter
+  material_ui: ^1.3.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  # `integration_test/report_test_results.dart` names each executed test via
+  # `package:test_api/hooks.dart`; `any` defers to the version flutter_test pins.
+  test_api: any
 
 flutter:
   uses-material-design: true
+  config:
+    # iOS and macOS build with Swift Package Manager only (no Podfile).
+    enable-swift-package-manager: true

@@ -7,35 +7,45 @@
 
 import PackageDescription
 
-let library_version = "5.2.2"
-let firebase_sdk_version: Version = "12.13.0"
+let firebaseSdkVersion: Version = "13.2.0"
 
 let package = Package(
   name: "firebase_crashlytics",
   platforms: [
-    .iOS("15.0"),
+    .iOS("15.0")
   ],
   products: [
-    .library(name: "firebase-crashlytics", targets: ["firebase_crashlytics"]),
+    .library(name: "firebase-crashlytics", targets: ["firebase_crashlytics"])
   ],
   dependencies: [
-    .package(url: "https://github.com/firebase/firebase-ios-sdk", from: firebase_sdk_version),
+    .package(url: "https://github.com/firebase/firebase-ios-sdk", exact: firebaseSdkVersion),
     .package(name: "firebase_core", path: "../firebase_core"),
+    .package(name: "FlutterFramework", path: "../FlutterFramework"),
   ],
   targets: [
+    // SPM does not allow mixing Swift and ObjC in a single target.
+    .target(
+      name: "firebase_crashlytics_objc",
+      dependencies: [
+        .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk")
+      ],
+      path: "Sources/firebase_crashlytics_objc",
+      publicHeadersPath: "include",
+      cSettings: [
+        .headerSearchPath("include")
+      ]
+    ),
     .target(
       name: "firebase_crashlytics",
       dependencies: [
+        "firebase_crashlytics_objc",
         .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk"),
         .product(name: "firebase-core", package: "firebase_core"),
+        .product(name: "FlutterFramework", package: "FlutterFramework"),
       ],
+      path: "Sources/firebase_crashlytics",
       resources: [
-        .process("Resources"),
-      ],
-      cSettings: [
-        .headerSearchPath("include"),
-        .define("LIBRARY_VERSION", to: "\"\(library_version)\""),
-        .define("LIBRARY_NAME", to: "\"flutter-fire-cls\""),
+        .process("Resources")
       ]
     ),
   ]

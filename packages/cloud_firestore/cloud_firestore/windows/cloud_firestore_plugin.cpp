@@ -14,6 +14,7 @@
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <future>
@@ -21,6 +22,7 @@
 #include <mutex>
 #include <queue>
 #include <sstream>
+#include <vector>
 
 #include "cloud_firestore/plugin_version.h"
 #include "firebase/app.h"
@@ -42,6 +44,48 @@ using flutter::EncodableValue;
 namespace cloud_firestore_windows {
 
 static std::string kLibraryName = "flutter-fire-fst";
+
+void TransactionResponse::Reset() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  response_received_ = false;
+  commands_.clear();
+}
+
+void TransactionResponse::Complete(
+    InternalTransactionResult result,
+    std::vector<InternalTransactionCommand> commands) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    result_ = result;
+    commands_ = std::move(commands);
+    response_received_ = true;
+  }
+  condition_.notify_one();
+}
+
+TransactionResponseStatus TransactionResponse::WaitFor(
+    std::chrono::milliseconds timeout, InternalTransactionResult& result,
+    std::vector<InternalTransactionCommand>& commands) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (!condition_.wait_for(
+          lock, timeout, [this] { return response_received_ || cancelled_; })) {
+    return TransactionResponseStatus::kTimedOut;
+  }
+  if (cancelled_) {
+    return TransactionResponseStatus::kCancelled;
+  }
+  result = result_;
+  commands = std::move(commands_);
+  return TransactionResponseStatus::kReceived;
+}
+
+void TransactionResponse::Cancel() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    cancelled_ = true;
+  }
+  condition_.notify_one();
+}
 
 namespace {
 
@@ -130,6 +174,15 @@ class PlatformThreadDispatcher {
   std::queue<std::function<void()>> tasks_;
 };
 
+template <typename T>
+void ReplyOnPlatformThread(std::function<void(ErrorOr<T>)> result,
+                           ErrorOr<T> reply) {
+  PlatformThreadDispatcher::GetInstance().Post(
+      [result = std::move(result), reply = std::move(reply)]() mutable {
+        result(std::move(reply));
+      });
+}
+
 struct EventSinkState {
   std::mutex mutex;
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> events;
@@ -203,7 +256,7 @@ void CloudFirestorePlugin::RegisterWithRegistrar(
 
   auto plugin = std::make_unique<CloudFirestorePlugin>();
 
-  messenger_ = registrar->messenger();
+  plugin->messenger_ = registrar->messenger();
 
   FirebaseFirestoreHostApi::SetUp(registrar->messenger(), plugin.get());
 
@@ -275,9 +328,6 @@ firebase::firestore::FieldValue CloudFirestorePlugin::ConvertToFieldValue(
   }
 }
 
-flutter::BinaryMessenger*
-    cloud_firestore_windows::CloudFirestorePlugin::messenger_ = nullptr;
-
 std::map<std::string,
          std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>>>
     event_channels_;
@@ -285,18 +335,19 @@ std::map<std::string, std::unique_ptr<flutter::StreamHandler<>>>
     stream_handlers_;
 std::map<std::string, flutter::StreamHandler<flutter::EncodableValue>*>
     cloud_firestore_windows::CloudFirestorePlugin::transaction_handlers_;
-std::map<std::string, std::shared_ptr<firebase::firestore::Transaction>>
+std::map<std::string, std::shared_ptr<CloudFirestorePlugin::TransactionEntry>>
     cloud_firestore_windows::CloudFirestorePlugin::transactions_;
+std::mutex cloud_firestore_windows::CloudFirestorePlugin::transactions_mutex_;
 std::map<std::string, std::unique_ptr<firebase::firestore::Firestore>>
     cloud_firestore_windows::CloudFirestorePlugin::firestoreInstances_;
 
 std::string RegisterEventChannelWithUUID(
-    std::string prefix, std::string uuid,
+    flutter::BinaryMessenger* messenger, std::string prefix, std::string uuid,
     std::unique_ptr<flutter::StreamHandler<flutter::EncodableValue>> handler) {
   std::string channelName = prefix + uuid;
   event_channels_[channelName] =
       std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
-          CloudFirestorePlugin::messenger_, channelName,
+          messenger, channelName,
           &flutter::StandardMethodCodec::GetInstance(
               &FirebaseFirestoreHostApiCodecSerializer::GetInstance()));
 
@@ -309,7 +360,7 @@ std::string RegisterEventChannelWithUUID(
 }
 
 std::string RegisterEventChannel(
-    std::string prefix,
+    flutter::BinaryMessenger* messenger, std::string prefix,
     std::unique_ptr<flutter::StreamHandler<flutter::EncodableValue>> handler) {
   UUID uuid;
   UuidCreate(&uuid);
@@ -319,7 +370,7 @@ std::string RegisterEventChannel(
   std::string channelName = prefix + str;
   event_channels_[channelName] =
       std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
-          CloudFirestorePlugin::messenger_, channelName,
+          messenger, channelName,
           &flutter::StandardMethodCodec::GetInstance(
               &FirebaseFirestoreHostApiCodecSerializer::GetInstance()));
   stream_handlers_[channelName] = std::move(handler);
@@ -351,7 +402,10 @@ Firestore* GetFirestoreFromPigeon(const FirestorePigeonFirebaseApp& pigeonApp) {
   firebase::firestore::Settings settings;
 
   if (pigeonApp.settings().persistence_enabled()) {
-    bool persistEnabled = pigeonApp.settings().persistence_enabled();
+    // The getter returns `const bool*` (null when unset); dereference to read
+    // the actual value rather than testing pointer presence.
+    bool persistEnabled = *pigeonApp.settings().persistence_enabled();
+    settings.set_persistence_enabled(persistEnabled);
 
     // This is the maximum amount of cache allowed. We use the same number on
     // android.
@@ -470,7 +524,8 @@ GetServerTimestampBehaviorFromPigeon(
   }
 }
 
-EncodableValue ConvertFieldValueToEncodableValue(const FieldValue& fieldValue) {
+EncodableValue CloudFirestorePlugin::ConvertFieldValueToEncodableValue(
+    const FieldValue& fieldValue) {
   switch (fieldValue.type()) {
     case FieldValue::Type::kNull:
       return EncodableValue();
@@ -491,6 +546,15 @@ EncodableValue ConvertFieldValueToEncodableValue(const FieldValue& fieldValue) {
 
     case FieldValue::Type::kString:
       return EncodableValue(fieldValue.string_value());
+
+    case FieldValue::Type::kBlob: {
+      std::vector<uint8_t> bytes;
+      if (fieldValue.blob_size() > 0) {
+        bytes.assign(fieldValue.blob_value(),
+                     fieldValue.blob_value() + fieldValue.blob_size());
+      }
+      return CustomEncodableValue(bytes);
+    }
 
     case FieldValue::Type::kMap: {
       EncodableMap encodableMap;
@@ -527,8 +591,9 @@ flutter::EncodableMap ConvertToEncodableMap(
   EncodableMap convertedMap;
   for (const auto& kv : originalMap) {
     EncodableValue key = EncodableValue(kv.first);
-    EncodableValue value = ConvertFieldValueToEncodableValue(
-        kv.second);             // convert FieldValue to EncodableValue
+    EncodableValue value =
+        CloudFirestorePlugin::ConvertFieldValueToEncodableValue(
+            kv.second);         // convert FieldValue to EncodableValue
     convertedMap[key] = value;  // insert into the new map
   }
   return convertedMap;
@@ -768,7 +833,8 @@ void CloudFirestorePlugin::LoadBundle(
       std::make_unique<LoadBundleStreamHandler>(firestore, bundleConverted);
 
   std::string channelName = RegisterEventChannel(
-      "plugins.flutter.io/firebase_firestore/loadBundle/", std::move(handler));
+      messenger_, "plugins.flutter.io/firebase_firestore/loadBundle/",
+      std::move(handler));
 
   result(channelName);
 }
@@ -966,7 +1032,7 @@ void CloudFirestorePlugin::SnapshotsInSyncSetup(
   std::string snapshotInSyncId(str);
 
   std::string channelName = RegisterEventChannelWithUUID(
-      "plugins.flutter.io/firebase_firestore/snapshotsInSync/",
+      messenger_, "plugins.flutter.io/firebase_firestore/snapshotsInSync/",
       snapshotInSyncId, std::move(handler));
   result(snapshotInSyncId);
 }
@@ -984,10 +1050,7 @@ class TransactionStreamHandler
   void ReceiveTransactionResponse(
       InternalTransactionResult resultType,
       std::vector<InternalTransactionCommand> commands) {
-    std::lock_guard<std::mutex> lock(commands_mutex_);
-    resultType_ = resultType;
-    commands_ = commands;
-    cv_.notify_one();
+    response_.Complete(resultType, std::move(commands));
   }
 
   std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>>
@@ -1005,32 +1068,49 @@ class TransactionStreamHandler
         ->RunTransaction(
             options,
             [this](Transaction& transaction, std::string& str) -> Error {
-              auto noopDeleter = [](Transaction*) {};
-              std::shared_ptr<Transaction> ptr(&transaction, noopDeleter);
-              CloudFirestorePlugin::transactions_[transactionId_] =
-                  std::move(ptr);
+              {
+                auto entry =
+                    std::make_shared<CloudFirestorePlugin::TransactionEntry>();
+                {
+                  std::lock_guard<std::mutex> entry_lock(entry->mutex);
+                  entry->transaction = &transaction;
+                }
+                std::lock_guard<std::mutex> lock(
+                    CloudFirestorePlugin::transactions_mutex_);
+                CloudFirestorePlugin::transactions_[transactionId_] =
+                    std::move(entry);
+              }
 
               flutter::EncodableMap map;
               map.emplace("appName", firestore_->app()->name());
+              response_.Reset();
               SendSuccessOnPlatformThread(events_state_,
                                           flutter::EncodableValue(map));
 
-              std::unique_lock<std::mutex> lock(mtx_);
-              if (cv_.wait_for(lock, std::chrono::milliseconds(timeout_)) ==
-                  std::cv_status::timeout) {
-                SendErrorOnPlatformThread(events_state_, "Timeout",
-                                          "Transaction timed out.",
-                                          flutter::EncodableValue(), true);
-                return Error::kErrorDeadlineExceeded;
+              InternalTransactionResult resultType;
+              std::vector<InternalTransactionCommand> commands;
+              const TransactionResponseStatus status = response_.WaitFor(
+                  std::chrono::milliseconds(timeout_), resultType, commands);
+              ReleaseTransaction();
+
+              switch (status) {
+                case TransactionResponseStatus::kTimedOut:
+                  reported_deadline_.store(true);
+                  SendDeadlineExceeded();
+                  // deadline-exceeded is retryable, so the SDK would try again.
+                  return Error::kErrorOutOfRange;
+                case TransactionResponseStatus::kCancelled:
+                  return Error::kErrorCancelled;
+                case TransactionResponseStatus::kReceived:
+                  break;
               }
 
-              std::lock_guard<std::mutex> command_lock(commands_mutex_);
-              if (resultType_ == InternalTransactionResult::kFailure) {
+              if (resultType == InternalTransactionResult::kFailure) {
                 return Error::kErrorAborted;
               }
-              if (commands_.empty()) return Error::kErrorOk;
+              if (commands.empty()) return Error::kErrorOk;
 
-              for (InternalTransactionCommand& command : commands_) {
+              for (InternalTransactionCommand& command : commands) {
                 std::string path = command.path();
                 InternalTransactionType type = command.type();
                 if (path.empty() /* or some other invalid condition */) {
@@ -1083,6 +1163,10 @@ class TransactionStreamHandler
               return Error::kErrorOk;
             })
         .OnCompletion([this](const Future<void>& completed_future) {
+          if (reported_deadline_.load()) {
+            EndStreamOnPlatformThread(events_state_);
+            return;
+          }
           flutter::EncodableMap result;
           if (completed_future.error() == firebase::firestore::kErrorOk) {
             result.insert(std::make_pair(flutter::EncodableValue("complete"),
@@ -1090,9 +1174,19 @@ class TransactionStreamHandler
             SendSuccessOnPlatformThread(events_state_,
                                         flutter::EncodableValue(result));
           } else {
-            SendErrorOnPlatformThread(events_state_, "transaction_error",
-                                      completed_future.error_message(),
-                                      flutter::EncodableValue());
+            // runTransaction reads this success payload. An EventChannel
+            // error never reaches the transaction future.
+            const firebase::firestore::Error errorCode =
+                static_cast<firebase::firestore::Error>(
+                    completed_future.error());
+            EncodableMap error;
+            error[EncodableValue("code")] =
+                EncodableValue(CloudFirestorePlugin::GetErrorCode(errorCode));
+            error[EncodableValue("message")] =
+                EncodableValue(completed_future.error_message());
+            result[EncodableValue("error")] = EncodableValue(error);
+            SendSuccessOnPlatformThread(events_state_,
+                                        flutter::EncodableValue(result));
           }
           EndStreamOnPlatformThread(events_state_);
         });
@@ -1102,23 +1196,46 @@ class TransactionStreamHandler
 
   std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>>
   OnCancelInternal(const flutter::EncodableValue* arguments) override {
-    std::unique_lock<std::mutex> lock(mtx_);
-    cv_.notify_one();
+    response_.Cancel();
     EndStreamOnPlatformThread(events_state_);
     return nullptr;
   }
 
  private:
+  void ReleaseTransaction() {
+    std::shared_ptr<CloudFirestorePlugin::TransactionEntry> entry;
+    {
+      std::lock_guard<std::mutex> lock(
+          CloudFirestorePlugin::transactions_mutex_);
+      const auto it = CloudFirestorePlugin::transactions_.find(transactionId_);
+      if (it == CloudFirestorePlugin::transactions_.end()) {
+        return;
+      }
+      entry = it->second;
+      CloudFirestorePlugin::transactions_.erase(it);
+    }
+    if (entry) {
+      std::lock_guard<std::mutex> lock(entry->mutex);
+      entry->transaction = nullptr;
+    }
+  }
+
+  void SendDeadlineExceeded() {
+    EncodableMap error;
+    error[EncodableValue("code")] = EncodableValue("deadline-exceeded");
+    error[EncodableValue("message")] = EncodableValue("Transaction timed out.");
+    EncodableMap result;
+    result[EncodableValue("error")] = EncodableValue(error);
+    SendSuccessOnPlatformThread(events_state_, flutter::EncodableValue(result));
+  }
+
   Firestore* firestore_;
   long timeout_;
   int maxAttempts_;
   std::string transactionId_;
-  std::vector<InternalTransactionCommand> commands_;
-  InternalTransactionResult resultType_ = InternalTransactionResult::kSuccess;
-  std::mutex mtx_;
-  std::mutex commands_mutex_;
-  std::condition_variable cv_;
+  TransactionResponse response_;
   std::shared_ptr<EventSinkState> events_state_;
+  std::atomic<bool> reported_deadline_{false};
 };
 
 void CloudFirestorePlugin::TransactionCreate(
@@ -1141,8 +1258,8 @@ void CloudFirestorePlugin::TransactionCreate(
 
   // Register the event channel.
   std::string channelName = RegisterEventChannelWithUUID(
-      "plugins.flutter.io/firebase_firestore/transaction/", transactionId,
-      std::move(handler));
+      messenger_, "plugins.flutter.io/firebase_firestore/transaction/",
+      transactionId, std::move(handler));
 
   // Return the result (assumed to be transaction ID in this example).
   result(transactionId);
@@ -1186,16 +1303,47 @@ void CloudFirestorePlugin::TransactionGet(
   Firestore* firestore = GetFirestoreFromPigeon(app);
   DocumentReference reference = firestore->Document(path);
 
-  std::shared_ptr<Transaction> transaction = transactions_[transaction_id];
-  Error error_code;
+  Error error_code = Error::kErrorOk;
   std::string error_message;
-
-  // Call the Get function
-  DocumentSnapshot snapshot =
-      transaction->Get(reference, &error_code, &error_message);
+  DocumentSnapshot snapshot;
+  bool missing = false;
+  std::shared_ptr<TransactionEntry> entry;
+  {
+    std::lock_guard<std::mutex> lock(transactions_mutex_);
+    const auto it = transactions_.find(transaction_id);
+    if (it != transactions_.end()) {
+      entry = it->second;
+    }
+  }
+  if (!entry) {
+    missing = true;
+  } else {
+    // The update callback nulls the pointer under this mutex before it
+    // returns, and the SDK destroys the transaction on that return.
+    std::lock_guard<std::mutex> lock(entry->mutex);
+    if (entry->transaction == nullptr) {
+      missing = true;
+    } else {
+      snapshot =
+          entry->transaction->Get(reference, &error_code, &error_message);
+    }
+  }
+  if (missing) {
+    result(FlutterError(
+        "missing-transaction",
+        "An error occurred while getting the native transaction. It could "
+        "be caused by a timeout in a preceding transaction operation."));
+    return;
+  }
 
   if (error_code != Error::kErrorOk) {
-    result(FlutterError(error_message));
+    // The one-argument FlutterError puts error_message in the code slot and
+    // sends no details, so Dart reports `unknown` with an empty message.
+    EncodableMap details;
+    details[EncodableValue("code")] =
+        EncodableValue(CloudFirestorePlugin::GetErrorCode(error_code));
+    details[EncodableValue("message")] = EncodableValue(error_message);
+    result(FlutterError("firebase_firestore", error_message, details));
   } else {
     result(ParseDocumentSnapshot(
         snapshot, DocumentSnapshot::ServerTimestampBehavior::kDefault));
@@ -1551,11 +1699,14 @@ void CloudFirestorePlugin::QueryGet(
         if (completed_future.error() == firebase::firestore::kErrorOk) {
           const firebase::firestore::QuerySnapshot* querySnapshot =
               completed_future.result();
-          result(ParseQuerySnapshot(querySnapshot,
-                                    GetServerTimestampBehaviorFromPigeon(
-                                        options.server_timestamp_behavior())));
+          ReplyOnPlatformThread<InternalQuerySnapshot>(
+              result,
+              ParseQuerySnapshot(querySnapshot,
+                                 GetServerTimestampBehaviorFromPigeon(
+                                     options.server_timestamp_behavior())));
         } else {
-          result(CloudFirestorePlugin::ParseError(completed_future));
+          ReplyOnPlatformThread<InternalQuerySnapshot>(
+              result, CloudFirestorePlugin::ParseError(completed_future));
         }
       });
 }
@@ -1577,7 +1728,6 @@ void CloudFirestorePlugin::AggregateQuery(
   Firestore* firestore = GetFirestoreFromPigeon(app);
   Query query = ParseQuery(firestore, path, is_collection_group, parameters);
 
-  // C++ SDK does not support average and sum
   firebase::firestore::AggregateQuery aggregate_query;
 
   for (auto& queryRequest : queries) {
@@ -1590,11 +1740,15 @@ void CloudFirestorePlugin::AggregateQuery(
         aggregate_query = query.Count();
         break;
       case AggregateType::kSum:
-        std::cout << "Sum is not supported on C++" << std::endl;
-        break;
       case AggregateType::kAverage:
-        std::cout << "Average is not supported on C++" << std::endl;
-        break;
+        // The Firebase C++ SDK only implements count() aggregations. Reject
+        // the request instead of dropping the unsupported aggregations from
+        // the response, which left `getSum()` / `getAverage()` returning null
+        // as if the query had succeeded.
+        result(FlutterError("unimplemented",
+                            "Sum and average aggregations are not supported by "
+                            "the Firebase C++ SDK on Windows."));
+        return;
     }
   }
 
@@ -1624,14 +1778,10 @@ void CloudFirestorePlugin::AggregateQuery(
                     CustomEncodableValue(aggregateResponse));
                 break;
               }
-              case AggregateType::kSum: {
-                std::cout << "Sum is not supported on C++" << std::endl;
+              case AggregateType::kSum:
+              case AggregateType::kAverage:
+                // Unreachable: requests containing these are rejected above.
                 break;
-              }
-              case AggregateType::kAverage: {
-                std::cout << "Average is not supported on C++" << std::endl;
-                break;
-              }
             }
           }
 
@@ -1800,9 +1950,9 @@ void CloudFirestorePlugin::QuerySnapshot(
       GetServerTimestampBehaviorFromPigeon(
           options.server_timestamp_behavior()));
 
-  std::string channelName =
-      RegisterEventChannel("plugins.flutter.io/firebase_firestore/query/",
-                           std::move(query_snapshot_handler));
+  std::string channelName = RegisterEventChannel(
+      messenger_, "plugins.flutter.io/firebase_firestore/query/",
+      std::move(query_snapshot_handler));
 
   result(channelName);
 }
@@ -1898,9 +2048,9 @@ void CloudFirestorePlugin::DocumentReferenceSnapshot(
           GetServerTimestampBehaviorFromPigeon(
               *parameters.server_timestamp_behavior()));
 
-  std::string channelName =
-      RegisterEventChannel("plugins.flutter.io/firebase_firestore/document/",
-                           std::move(document_snapshot_handler));
+  std::string channelName = RegisterEventChannel(
+      messenger_, "plugins.flutter.io/firebase_firestore/document/",
+      std::move(document_snapshot_handler));
   result(channelName);
 }
 

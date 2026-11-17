@@ -7,19 +7,20 @@
 
 import PackageDescription
 
-let firebase_sdk_version: Version = "12.13.0"
+let firebaseSdkVersion: Version = "13.2.0"
 
 let package = Package(
   name: "firebase_remote_config",
   platforms: [
-    .macOS("10.15"),
+    .macOS("11.0")
   ],
   products: [
-    .library(name: "firebase-remote-config", targets: ["firebase_remote_config"]),
+    .library(name: "firebase-remote-config", targets: ["firebase_remote_config"])
   ],
   dependencies: [
-    .package(url: "https://github.com/firebase/firebase-ios-sdk", from: firebase_sdk_version),
+    .package(url: "https://github.com/firebase/firebase-ios-sdk", exact: firebaseSdkVersion),
     .package(name: "firebase_core", path: "../firebase_core"),
+    .package(name: "FlutterFramework", path: "../FlutterFramework"),
   ],
   targets: [
     .target(
@@ -27,10 +28,11 @@ let package = Package(
       dependencies: [
         .product(name: "FirebaseRemoteConfig", package: "firebase-ios-sdk"),
         .product(name: "firebase-core", package: "firebase_core"),
+        .product(name: "FlutterFramework", package: "FlutterFramework"),
       ],
       resources: [
-        .process("Resources"),
+        .process("Resources")
       ]
-    ),
+    )
   ]
 )

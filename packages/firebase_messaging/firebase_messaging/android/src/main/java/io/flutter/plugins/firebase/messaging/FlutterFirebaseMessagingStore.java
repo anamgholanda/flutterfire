@@ -55,8 +55,10 @@ public class FlutterFirebaseMessagingStore {
     setPreferencesStringValue(remoteMessage.getMessageId(), remoteMessageString);
 
     // Save new notification id.
-    // Note that this is using a comma delimited string to preserve ordering. We could use a String Set
-    // on SharedPreferences but this won't guarantee ordering when we want to remove the oldest added ids.
+    // Note that this is using a comma delimited string to preserve ordering. We could use a String
+    // Set
+    // on SharedPreferences but this won't guarantee ordering when we want to remove the oldest
+    // added ids.
     String notifications = getPreferencesStringValue(KEY_NOTIFICATION_IDS, "");
     notifications += remoteMessage.getMessageId() + DELIMITER; // append to last
 
@@ -72,16 +74,15 @@ public class FlutterFirebaseMessagingStore {
     setPreferencesStringValue(KEY_NOTIFICATION_IDS, notifications);
   }
 
+  /**
+   * Returns the map stored by {@link #storeFirebaseMessage}, in the same shape as {@link
+   * FlutterFirebaseMessagingUtils#remoteMessageToMap}.
+   */
   public Map<String, Object> getFirebaseMessageMap(String remoteMessageId) {
     String remoteMessageString = getPreferencesStringValue(remoteMessageId, null);
     if (remoteMessageString != null) {
       try {
-        Map<String, Object> argumentsMap = new HashMap<>(1);
-        Map<String, Object> messageOutMap = jsonObjectToMap(new JSONObject(remoteMessageString));
-        // Add a fake 'to' - as it's required to construct a RemoteMessage instance.
-        messageOutMap.put("to", remoteMessageId);
-        argumentsMap.put("message", messageOutMap);
-        return argumentsMap;
+        return jsonObjectToMap(new JSONObject(remoteMessageString));
       } catch (JSONException e) {
         e.printStackTrace();
       }

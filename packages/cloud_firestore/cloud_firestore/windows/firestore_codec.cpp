@@ -7,7 +7,9 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "cloud_firestore_plugin.h"
 #include "firebase/app.h"
@@ -65,6 +67,14 @@ void cloud_firestore_windows::FirestoreCodec::WriteValue(
       flutter::StandardCodecSerializer::WriteValue(appName, stream);
       flutter::StandardCodecSerializer::WriteValue(reference.path(), stream);
       flutter::StandardCodecSerializer::WriteValue(databaseUrl, stream);
+    } else if (custom_value.type() == typeid(std::vector<uint8_t>)) {
+      const std::vector<uint8_t>& bytes =
+          std::any_cast<const std::vector<uint8_t>&>(custom_value);
+      stream->WriteByte(DATA_TYPE_BLOB);
+      WriteSize(bytes.size(), stream);
+      if (!bytes.empty()) {
+        stream->WriteBytes(bytes.data(), bytes.size());
+      }
     } else if (custom_value.type() ==
                typeid(double)) {  // Assuming Double is standard C++ double
       const double& myDouble = std::any_cast<double>(custom_value);
@@ -198,6 +208,17 @@ cloud_firestore_windows::FirestoreCodec::ReadValueOfType(
       return CustomEncodableValue(FieldValue::Increment(incrementValue));
     }
 
+    case DATA_TYPE_MINIMUM_DOUBLE:
+    case DATA_TYPE_MINIMUM_INTEGER:
+    case DATA_TYPE_MAXIMUM_DOUBLE:
+    case DATA_TYPE_MAXIMUM_INTEGER: {
+      // Consume the encoded operand so the codec stays in sync.
+      FirestoreCodec::ReadValue(stream);
+      throw std::runtime_error(
+          "FieldValue.minimum() and FieldValue.maximum() are not supported on "
+          "Windows until the Firebase C++ SDK exposes them.");
+    }
+
     case DATA_TYPE_DOCUMENT_ID: {
       return CustomEncodableValue(FieldPath::DocumentId());
     }
@@ -274,6 +295,7 @@ cloud_firestore_windows::FirestoreCodec::ReadValueOfType(
           }
         }
 
+        settings.set_persistence_enabled(persistEnabled);
         if (persistEnabled) {
           settings.set_cache_size_bytes(size);
         }

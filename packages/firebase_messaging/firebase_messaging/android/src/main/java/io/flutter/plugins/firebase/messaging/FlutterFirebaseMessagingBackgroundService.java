@@ -9,7 +9,7 @@ import android.content.Intent;
 import android.os.Handler;
 import android.util.Log;
 import androidx.annotation.NonNull;
-import io.flutter.embedding.engine.FlutterShellArgs;
+import androidx.annotation.VisibleForTesting;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -35,28 +35,6 @@ public class FlutterFirebaseMessagingBackgroundService extends JobIntentService 
         FlutterFirebaseMessagingUtils.JOB_ID,
         messageIntent,
         isHighPriority);
-  }
-
-  /**
-   * Starts the background isolate for the {@link FlutterFirebaseMessagingBackgroundService}.
-   *
-   * <p>Preconditions:
-   *
-   * <ul>
-   *   <li>The given {@code callbackHandle} must correspond to a registered Dart callback. If the
-   *       handle does not resolve to a Dart callback then this method does nothing.
-   *   <li>A static {@link #pluginRegistrantCallback} must exist, otherwise a {@link
-   *       PluginRegistrantException} will be thrown.
-   * </ul>
-   */
-  @SuppressWarnings("JavadocReference")
-  public static void startBackgroundIsolate(long callbackHandle, FlutterShellArgs shellArgs) {
-    if (flutterBackgroundExecutor != null) {
-      Log.w(TAG, "Attempted to start a duplicate background isolate. Returning...");
-      return;
-    }
-    flutterBackgroundExecutor = new FlutterFirebaseMessagingBackgroundExecutor();
-    flutterBackgroundExecutor.startBackgroundIsolate(callbackHandle, shellArgs);
   }
 
   /**
@@ -101,7 +79,25 @@ public class FlutterFirebaseMessagingBackgroundService extends JobIntentService 
     if (flutterBackgroundExecutor == null) {
       flutterBackgroundExecutor = new FlutterFirebaseMessagingBackgroundExecutor();
     }
+    BackgroundHandlerStartDecision.Action action =
+        FlutterFirebaseMessagingBackgroundGate.decide(this);
+    if (action == BackgroundHandlerStartDecision.Action.SKIP_AND_CLEAR) {
+      FlutterFirebaseMessagingBackgroundGate.clearHandlesAsync(this);
+    }
+    if (action != BackgroundHandlerStartDecision.Action.START) {
+      return;
+    }
     flutterBackgroundExecutor.startBackgroundIsolate();
+  }
+
+  @VisibleForTesting
+  static boolean isolateStartRequested() {
+    return flutterBackgroundExecutor != null && flutterBackgroundExecutor.isolateStartRequested();
+  }
+
+  @VisibleForTesting
+  static void resetExecutorForTests() {
+    flutterBackgroundExecutor = null;
   }
 
   /**
@@ -122,7 +118,8 @@ public class FlutterFirebaseMessagingBackgroundService extends JobIntentService 
     if (!flutterBackgroundExecutor.isDartBackgroundHandlerRegistered()) {
       Log.w(
           TAG,
-          "A background message could not be handled in Dart as no onBackgroundMessage handler has been registered.");
+          "A background message could not be handled in Dart as no onBackgroundMessage handler has"
+              + " been registered.");
       return;
     }
 

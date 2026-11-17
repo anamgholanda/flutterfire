@@ -68,7 +68,9 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
       final secondElement = currentUser[1]!;
       currentUser = InternalUserDetails.decode([firstElement, secondElement]);
     }
-    return FirebaseAuthPlatform.instance.delegateFor(app: app).setInitialValues(
+    return FirebaseAuthPlatform.instance
+        .delegateFor(app: app)
+        .setInitialValues(
           languageCode: pluginConstants['APP_LANGUAGE_CODE'],
           currentUser: currentUser,
         );
@@ -241,9 +243,6 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
   /// - **network-request-failed**:
   ///  - Thrown if there was a network request error, for example the user
   ///    doesn't have internet connection
-  /// - **operation-not-allowed**:
-  ///  - Thrown if email/password accounts are not enabled. Enable
-  ///    email/password accounts in the Firebase Console, under the Auth tab.
   Future<UserCredentialPlatform> createUserWithEmailAndPassword(
     String email,
     String password,
@@ -313,8 +312,12 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
   }
 
   /// Triggers the Firebase Authentication backend to send a password-reset
-  /// email to the given email address, which must correspond to an existing
-  /// user of your app.
+  /// email to the given email address.
+  ///
+  /// If email enumeration protection is enabled for the Firebase project, this
+  /// method may complete successfully even when the email does not correspond
+  /// to an existing user. This prevents apps from using password reset requests
+  /// to discover registered email addresses.
   Future<void> sendPasswordResetEmail(
     String email, [
     ActionCodeSettings? actionCodeSettings,
@@ -392,9 +395,15 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
   ///   Key Sharing capabilities must be enabled for your app via XCode (Project
   ///   settings > Capabilities). To learn more, visit the
   ///   [Apple documentation](https://developer.apple.com/documentation/security/keychain_services/keychain_items/sharing_access_to_keychain_items_among_a_collection_of_apps).
+  ///
+  /// [migrateCurrentUser] This setting only applies to iOS and macOS platforms.
+  ///   When `true`, the currently signed-in user is migrated to
+  ///   [userAccessGroup]. [userAccessGroup] must be non-null when this is
+  ///   `true`. This may replace a user already stored in that access group.
   Future<void> setSettings({
     bool appVerificationDisabledForTesting = false,
     String? userAccessGroup,
+    bool migrateCurrentUser = false,
     String? phoneNumber,
     String? smsCode,
     bool? forceRecaptchaFlow,
@@ -454,10 +463,10 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
   /// A [FirebaseAuthException] maybe thrown with the following error code:
   /// - **account-exists-with-different-credential**:
   ///  - Thrown if there already exists an account with the email address
-  ///    asserted by the credential. Resolve this by calling
-  ///    [fetchSignInMethodsForEmail] and then asking the user to sign in using
-  ///    one of the returned providers. Once the user is signed in, the original
-  ///    credential can be linked to the user with [linkWithCredential].
+  ///    asserted by the credential. Resolve this by asking the user to sign in
+  ///    with a provider already linked to that email address. Once the user is
+  ///    signed in, the original credential can be linked to the user with
+  ///    [linkWithCredential].
   /// - **invalid-credential**:
   ///  - Thrown if the credential is malformed or has expired.
   /// - **operation-not-allowed**:
@@ -545,8 +554,8 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
   ///    [email enumeration protection](https://cloud.google.com/identity-platform/docs/admin/email-enumeration-protection)
   ///    enabled (the default since September 2023), this replaces
   ///    **user-not-found** and **wrong-password** to prevent revealing
-  ///    whether an account exists. On the Firebase emulator, the code may
-  ///    appear as **INVALID_LOGIN_CREDENTIALS**.
+  ///    whether an account exists. Older versions of the native SDKs
+  ///    reported **invalid-login-credentials** instead.
   /// - **operation-not-allowed**:
   ///  - Thrown if email/password accounts are not enabled. Enable
   ///    email/password accounts in the Firebase Console, under the Auth tab.
@@ -717,7 +726,8 @@ abstract class FirebaseAuthPlatform extends PlatformInterface {
   /// Authorization code can be retrieved on the user credential i.e. userCredential.additionalUserInfo.authorizationCode
   Future<void> revokeTokenWithAuthorizationCode(String authorizationCode) {
     throw UnimplementedError(
-        'revokeTokenWithAuthorizationCode() is not implemented');
+      'revokeTokenWithAuthorizationCode() is not implemented',
+    );
   }
 
   /// Android only. Revokes the provided accessToken. Currently supports revoking Apple-issued accessToken only.

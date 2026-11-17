@@ -7,20 +7,21 @@
 
 import PackageDescription
 
-let library_version = "6.5.1"
-let firebase_sdk_version: Version = "12.13.0"
+let libraryVersion = "7.1.0"
+let firebaseSdkVersion: Version = "13.2.0"
 
 let package = Package(
   name: "firebase_auth",
   platforms: [
-    .iOS("15.0"),
+    .iOS("15.0")
   ],
   products: [
-    .library(name: "firebase-auth", targets: ["firebase_auth"]),
+    .library(name: "firebase-auth", targets: ["firebase_auth"])
   ],
   dependencies: [
-    .package(url: "https://github.com/firebase/firebase-ios-sdk", from: firebase_sdk_version),
+    .package(url: "https://github.com/firebase/firebase-ios-sdk", exact: firebaseSdkVersion),
     .package(name: "firebase_core", path: "../firebase_core"),
+    .package(name: "FlutterFramework", path: "../FlutterFramework"),
   ],
   targets: [
     .target(
@@ -28,16 +29,15 @@ let package = Package(
       dependencies: [
         .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
         .product(name: "firebase-core", package: "firebase_core"),
+        .product(name: "FlutterFramework", package: "FlutterFramework"),
       ],
       resources: [
-        .process("Resources"),
+        .process("Resources")
       ],
       cSettings: [
-        .headerSearchPath("include/Private"),
-        .headerSearchPath("include/Public"),
-        .define("LIBRARY_VERSION", to: "\"\(library_version)\""),
+        .define("LIBRARY_VERSION", to: "\"\(libraryVersion)\""),
         .define("LIBRARY_NAME", to: "\"flutter-fire-auth\""),
       ]
-    ),
+    )
   ]
 )

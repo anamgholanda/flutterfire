@@ -19,40 +19,94 @@ void main() {
       );
     });
 
-    test('should catch a [PlatformException] and throw a [FirebaseException]',
-        () async {
-      PlatformException platformException = PlatformException(code: 'UNKNOWN');
+    test(
+      'should catch a [PlatformException] and throw a [FirebaseException]',
+      () async {
+        PlatformException platformException = PlatformException(
+          code: 'UNKNOWN',
+        );
 
-      expect(
-        () => convertPlatformException(platformException, StackTrace.empty),
-        throwsA(
-          isA<FirebaseAuthException>().having((e) => e.code, 'code', 'unknown'),
-        ),
-      );
-    });
+        expect(
+          () => convertPlatformException(platformException, StackTrace.empty),
+          throwsA(
+            isA<FirebaseAuthException>().having(
+              (e) => e.code,
+              'code',
+              'unknown',
+            ),
+          ),
+        );
+      },
+    );
 
     test(
-        'should catch a [PlatformException] and throw a [FirebaseException] with the correct message',
-        () async {
+      'should catch a [PlatformException] and throw a [FirebaseException] with the correct message',
+      () async {
+        PlatformException platformException = PlatformException(
+          code: 'UNKNOWN',
+          message:
+              'An internal error has occurred. [ BLOCKING_FUNCTION_ERROR_RESPONSE:HTTP Cloud Function returned an error: {"error":{"details":"The user is not allowed to log in","message":"","status":"PERMISSION_DENIED"}} ]',
+        );
+
+        expect(
+          () => convertPlatformException(platformException, StackTrace.empty),
+          throwsA(
+            isA<FirebaseAuthException>()
+                .having(
+                  (e) => e.code,
+                  'code',
+                  'blocking-function-error-response',
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  '{"error":{"details":"The user is not allowed to log in","message":"","status":"PERMISSION_DENIED"}}',
+                ),
+          ),
+        );
+      },
+    );
+
+    test('should catch a [PlatformException] with non-Map details', () async {
       PlatformException platformException = PlatformException(
-        code: 'UNKNOWN',
-        message:
-            'An internal error has occurred. [ BLOCKING_FUNCTION_ERROR_RESPONSE:HTTP Cloud Function returned an error: {"error":{"details":"The user is not allowed to log in","message":"","status":"PERMISSION_DENIED"}} ]',
+        code: 'ERROR_INTERNAL_ERROR',
+        message: 'An internal error has occurred',
+        details: 'Native error details',
       );
 
       expect(
         () => convertPlatformException(platformException, StackTrace.empty),
         throwsA(
           isA<FirebaseAuthException>()
-              .having((e) => e.code, 'code', 'blocking-function-error-response')
-              .having((e) => e.message, 'message',
-                  '{"error":{"details":"The user is not allowed to log in","message":"","status":"PERMISSION_DENIED"}}'),
+              .having((e) => e.code, 'code', 'internal-error')
+              .having(
+                (e) => e.message,
+                'message',
+                'An internal error has occurred',
+              ),
         ),
       );
     });
   });
 
   group('platformExceptionToFirebaseAuthException()', () {
+    test('handles non-Map pigeon details', () {
+      PlatformException platformException = PlatformException(
+        code: 'ERROR_INTERNAL_ERROR',
+        message: 'An internal error has occurred',
+        details: 'Native error details',
+      );
+
+      FirebaseAuthException result =
+          platformExceptionToFirebaseAuthException(platformException)
+              as FirebaseAuthException;
+
+      expect(result.code, equals('internal-error'));
+      expect(result.message, equals('An internal error has occurred'));
+      expect(result.email, isNull);
+      expect(result.credential, isNull);
+    });
+
     test('sets code to default value', () {
       AuthCredential authCredential = const AuthCredential(
         providerId: 'testProviderId',
@@ -61,16 +115,19 @@ void main() {
       );
 
       PlatformException platformException = PlatformException(
-          code: 'unknown',
-          message: 'PlatformException Message',
-          details: {
-            'additionalData': {'authCredential': authCredential.asMap()}
-          });
+        code: 'unknown',
+        message: 'PlatformException Message',
+        details: {
+          'additionalData': {'authCredential': authCredential.asMap()},
+        },
+      );
 
-      FirebaseAuthException result = platformExceptionToFirebaseAuthException(
-        platformException,
-        fromPigeon: false,
-      ) as FirebaseAuthException;
+      FirebaseAuthException result =
+          platformExceptionToFirebaseAuthException(
+                platformException,
+                fromPigeon: false,
+              )
+              as FirebaseAuthException;
       expect(result.code, equals('unknown'));
       expect(result.message, equals('PlatformException Message'));
       expect(result.email, isNull);
@@ -86,22 +143,29 @@ void main() {
 
     test('sets correct values from additionalData', () {
       AuthCredential authCredential = EmailAuthProvider.credential(
-          email: 'test@email.com', password: 'testPassword');
+        email: 'test@email.com',
+        password: 'testPassword',
+      );
 
-      PlatformException platformException =
-          PlatformException(code: 'native', message: 'a message', details: {
-        'code': 'A Known Code',
-        'message': 'A Known Message',
-        'additionalData': {
-          'email': 'test@email.com',
-          'authCredential': authCredential.asMap(),
-        }
-      });
+      PlatformException platformException = PlatformException(
+        code: 'native',
+        message: 'a message',
+        details: {
+          'code': 'A Known Code',
+          'message': 'A Known Message',
+          'additionalData': {
+            'email': 'test@email.com',
+            'authCredential': authCredential.asMap(),
+          },
+        },
+      );
 
-      FirebaseAuthException result = platformExceptionToFirebaseAuthException(
-        platformException,
-        fromPigeon: false,
-      ) as FirebaseAuthException;
+      FirebaseAuthException result =
+          platformExceptionToFirebaseAuthException(
+                platformException,
+                fromPigeon: false,
+              )
+              as FirebaseAuthException;
       expect(result.code, equals('A Known Code'));
       expect(result.message, equals('A Known Message'));
       expect(result.email, 'test@email.com');
@@ -110,7 +174,9 @@ void main() {
       expect(result.credential!.providerId, equals(authCredential.providerId));
       expect(result.credential!.token, equals(authCredential.token));
       expect(
-          result.credential!.signInMethod, equals(authCredential.signInMethod));
+        result.credential!.signInMethod,
+        equals(authCredential.signInMethod),
+      );
     });
 
     test('details = null', () {
@@ -119,10 +185,12 @@ void main() {
         message: 'a message',
       );
 
-      FirebaseAuthException result = platformExceptionToFirebaseAuthException(
-        platformException,
-        fromPigeon: false,
-      ) as FirebaseAuthException;
+      FirebaseAuthException result =
+          platformExceptionToFirebaseAuthException(
+                platformException,
+                fromPigeon: false,
+              )
+              as FirebaseAuthException;
       expect(result.code, equals('unknown'));
       expect(result.message, equals('a message'));
       expect(result.email, null);
@@ -132,14 +200,17 @@ void main() {
 
     test('additionalData = null', () {
       PlatformException platformException = PlatformException(
-          code: 'native',
-          message: 'a message',
-          details: {'additionalData': null});
+        code: 'native',
+        message: 'a message',
+        details: {'additionalData': null},
+      );
 
-      FirebaseAuthException result = platformExceptionToFirebaseAuthException(
-        platformException,
-        fromPigeon: false,
-      ) as FirebaseAuthException;
+      FirebaseAuthException result =
+          platformExceptionToFirebaseAuthException(
+                platformException,
+                fromPigeon: false,
+              )
+              as FirebaseAuthException;
       expect(result.code, equals('unknown'));
       expect(result.message, equals('a message'));
       expect(result.email, isNull);
@@ -154,14 +225,16 @@ void main() {
         details: {
           'code': 'A Known Code',
           'message': 'A Known Message',
-          'additionalData': {'email': 'test@email.com'}
+          'additionalData': {'email': 'test@email.com'},
         },
       );
 
-      FirebaseAuthException result = platformExceptionToFirebaseAuthException(
-        platformException,
-        fromPigeon: false,
-      ) as FirebaseAuthException;
+      FirebaseAuthException result =
+          platformExceptionToFirebaseAuthException(
+                platformException,
+                fromPigeon: false,
+              )
+              as FirebaseAuthException;
       expect(result.code, equals('A Known Code'));
       expect(result.message, equals('A Known Message'));
       expect(result.email, 'test@email.com');

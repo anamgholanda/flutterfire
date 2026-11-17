@@ -10,13 +10,13 @@ import com.google.firebase.functions.HttpsCallableReference
 import com.google.firebase.functions.StreamResponse
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.EventChannel.EventSink
-import org.reactivestreams.Publisher
 import java.net.URL
 import java.util.Objects
 import java.util.concurrent.TimeUnit
+import org.reactivestreams.Publisher
 
 class FirebaseFunctionsStreamHandler(private val firebaseFunctions: FirebaseFunctions) :
-  EventChannel.StreamHandler {
+    EventChannel.StreamHandler {
   private var subscriber: StreamResponseSubscriber? = null
 
   override fun onListen(arguments: Any, events: EventSink) {
@@ -25,7 +25,8 @@ class FirebaseFunctionsStreamHandler(private val firebaseFunctions: FirebaseFunc
   }
 
   override fun onCancel(arguments: Any) {
-    subscriber!!.cancel()
+    // Null when the stream failed before subscribing.
+    subscriber?.cancel()
   }
 
   private fun httpsStreamCall(arguments: Map<String, Any>, events: EventSink) {
@@ -36,7 +37,7 @@ class FirebaseFunctionsStreamHandler(private val firebaseFunctions: FirebaseFunc
       val timeout = arguments["timeout"] as Int?
       val parameters = arguments["parameters"]
       val limitedUseAppCheckToken =
-        Objects.requireNonNull(arguments["limitedUseAppCheckToken"]) as Boolean
+          Objects.requireNonNull(arguments["limitedUseAppCheckToken"]) as Boolean
 
       if (origin != null) {
         val originUri = Uri.parse(origin)
@@ -44,9 +45,10 @@ class FirebaseFunctionsStreamHandler(private val firebaseFunctions: FirebaseFunc
       }
 
       val httpsCallableReference: HttpsCallableReference
-      val options: HttpsCallableOptions =HttpsCallableOptions.Builder()
-          .setLimitedUseAppCheckTokens(limitedUseAppCheckToken)
-          .build()
+      val options: HttpsCallableOptions =
+          HttpsCallableOptions.Builder()
+              .setLimitedUseAppCheckTokens(limitedUseAppCheckToken)
+              .build()
 
       val publisher: Publisher<StreamResponse>
       if (functionName != null) {
@@ -54,8 +56,8 @@ class FirebaseFunctionsStreamHandler(private val firebaseFunctions: FirebaseFunc
         publisher = httpsCallableReference.stream(parameters)
       } else if (functionUri != null) {
         httpsCallableReference =
-          firebaseFunctions.getHttpsCallableFromUrl(URL(functionUri), options)
-        publisher = httpsCallableReference.stream()
+            firebaseFunctions.getHttpsCallableFromUrl(URL(functionUri), options)
+        publisher = httpsCallableReference.stream(parameters)
       } else {
         throw IllegalArgumentException("Either functionName or functionUri must be set")
       }
@@ -66,7 +68,9 @@ class FirebaseFunctionsStreamHandler(private val firebaseFunctions: FirebaseFunc
       subscriber = StreamResponseSubscriber(events)
       publisher.subscribe(subscriber)
     } catch (e: Exception) {
-      events.error("firebase_functions", e.message, null)
+      events.error(
+          "firebase_functions", e.message, FlutterFirebaseFunctionsPlugin.getExceptionDetails(e))
+      events.endOfStream()
     }
   }
 }

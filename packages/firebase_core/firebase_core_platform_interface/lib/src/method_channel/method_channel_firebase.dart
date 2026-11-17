@@ -33,20 +33,19 @@ class MethodChannelFirebase extends FirebasePlatform {
   }
 
   /// Creates and attaches a new [MethodChannelFirebaseApp] to the [MethodChannelFirebase]
-  /// and adds any constants to the [FirebasePluginPlatform] class.
+  /// and adds any constants to the [FirebasePlugin] class.
   void _initializeFirebaseAppFromMap(CoreInitializeResponse response) {
     MethodChannelFirebaseApp methodChannelFirebaseApp =
         MethodChannelFirebaseApp(
-      response.name,
-      FirebaseOptions.fromPigeon(response.options),
-      isAutomaticDataCollectionEnabled:
-          response.isAutomaticDataCollectionEnabled,
-    );
+          response.name,
+          FirebaseOptions.fromPigeon(response.options),
+          isAutomaticDataCollectionEnabled:
+              response.isAutomaticDataCollectionEnabled,
+        );
 
     appInstances[methodChannelFirebaseApp.name] = methodChannelFirebaseApp;
 
-    FirebasePluginPlatform
-            ._constantsForPluginApps[methodChannelFirebaseApp.name] =
+    FirebasePlugin._constantsForPluginApps[methodChannelFirebaseApp.name] =
         response.pluginConstants;
   }
 
@@ -90,7 +89,8 @@ class MethodChannelFirebase extends FirebasePlatform {
       // If no options are present & no default app has been setup, the user is
       // trying to initialize default from Dart
       if (defaultApp == null && _options != null) {
-        _initializeFirebaseAppFromMap(await api.initializeApp(
+        _initializeFirebaseAppFromMap(
+          await api.initializeApp(
             defaultFirebaseAppName,
             CoreFirebaseOptions(
               apiKey: _options.apiKey,
@@ -107,7 +107,9 @@ class MethodChannelFirebase extends FirebasePlatform {
               iosClientId: _options.iosClientId,
               iosBundleId: _options.iosBundleId,
               appGroupId: _options.appGroupId,
-            )));
+            ),
+          ),
+        );
         defaultApp = appInstances[defaultFirebaseAppName];
       }
 
@@ -156,7 +158,8 @@ class MethodChannelFirebase extends FirebasePlatform {
       }
     }
 
-    _initializeFirebaseAppFromMap(await api.initializeApp(
+    _initializeFirebaseAppFromMap(
+      await api.initializeApp(
         name,
         CoreFirebaseOptions(
           apiKey: options!.apiKey,
@@ -173,7 +176,9 @@ class MethodChannelFirebase extends FirebasePlatform {
           iosClientId: options.iosClientId,
           iosBundleId: options.iosBundleId,
           appGroupId: options.appGroupId,
-        )));
+        ),
+      ),
+    );
     return appInstances[name]!;
   }
 

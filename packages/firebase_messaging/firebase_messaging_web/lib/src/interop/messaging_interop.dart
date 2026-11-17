@@ -9,6 +9,7 @@
 library;
 
 import 'dart:js_interop';
+import 'package:web/web.dart' as web;
 
 import 'package:firebase_core_web/firebase_core_web_interop.dart';
 
@@ -23,7 +24,20 @@ external JSPromise<JSBoolean> deleteToken(MessagingJsImpl messaging);
 @JS()
 @staticInterop
 external JSPromise<JSString> getToken(
-    MessagingJsImpl messaging, GetTokenOptions? getTokenOptions);
+  MessagingJsImpl messaging,
+  GetTokenOptions? getTokenOptions,
+);
+
+@JS()
+@staticInterop
+external JSPromise<JSAny?> register(
+  MessagingJsImpl messaging,
+  RegisterOptions? registerOptions,
+);
+
+@JS()
+@staticInterop
+external JSPromise<JSAny?> unregister(MessagingJsImpl messaging);
 
 @JS('isSupported')
 @staticInterop
@@ -31,7 +45,15 @@ external JSPromise<JSBoolean> isSupported();
 
 @JS()
 @staticInterop
-external JSFunction onMessage(
+external JSFunction onMessage(MessagingJsImpl messaging, Observer observer);
+
+@JS()
+@staticInterop
+external JSFunction onRegistered(MessagingJsImpl messaging, Observer observer);
+
+@JS()
+@staticInterop
+external JSFunction onUnregistered(
   MessagingJsImpl messaging,
   Observer observer,
 );
@@ -45,13 +67,21 @@ extension type Observer._(JSObject _) implements JSObject {
 }
 
 extension type GetTokenOptions._(JSObject _) implements JSObject {
-  // TODO - I imagine we won't be implementing serviceWorkerRegistration type as it extends EventTarget class
-  // external String get serviceWorkerRegistration
   external factory GetTokenOptions({
     JSString? vapidKey,
-    /*dynamic serviceWorkerRegistration */
+    web.ServiceWorkerRegistration? serviceWorkerRegistration,
   });
   external JSString get vapidKey;
+  external web.ServiceWorkerRegistration get serviceWorkerRegistration;
+}
+
+extension type RegisterOptions._(JSObject _) implements JSObject {
+  external factory RegisterOptions({
+    JSString? vapidKey,
+    web.ServiceWorkerRegistration? serviceWorkerRegistration,
+  });
+  external JSString get vapidKey;
+  external web.ServiceWorkerRegistration get serviceWorkerRegistration;
 }
 
 extension type NotificationPayloadJsImpl._(JSObject _) implements JSObject {

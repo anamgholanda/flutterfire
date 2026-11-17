@@ -17,7 +17,7 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
   /// Creates a new [MethodChannelFirebaseAnalytics] instance with an [app] and/or
   /// [region].
   MethodChannelFirebaseAnalytics({required FirebaseApp app})
-      : super(appInstance: app);
+    : super(appInstance: app);
 
   /// Internal stub class initializer.
   ///
@@ -32,8 +32,9 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
     return MethodChannelFirebaseAnalytics._();
   }
 
-  static const MethodChannel channel =
-      MethodChannel('plugins.flutter.io/firebase_analytics');
+  static const MethodChannel channel = MethodChannel(
+    'plugins.flutter.io/firebase_analytics',
+  );
 
   @override
   FirebaseAnalyticsPlatform delegateFor({
@@ -85,7 +86,7 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
     bool? securityStorageConsentGranted,
   }) async {
     try {
-      return _api.setConsent(<String, bool?>{
+      return await _api.setConsent(<String, bool?>{
         if (adStorageConsentGranted != null)
           'adStorageConsentGranted': adStorageConsentGranted,
         if (analyticsStorageConsentGranted != null)
@@ -106,7 +107,7 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
     Map<String, Object?>? defaultParameters,
   ) async {
     try {
-      return _api.setDefaultEventParameters(defaultParameters);
+      return await _api.setDefaultEventParameters(defaultParameters);
     } catch (e, s) {
       convertPlatformException(e, s);
     }
@@ -122,10 +123,7 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
   }
 
   @override
-  Future<void> setUserId({
-    String? id,
-    AnalyticsCallOptions? callOptions,
-  }) {
+  Future<void> setUserId({String? id, AnalyticsCallOptions? callOptions}) {
     try {
       return _api.setUserId(id);
     } catch (e, s) {
@@ -168,7 +166,7 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
   Future<void> setSessionTimeoutDuration(Duration timeout) async {
     try {
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        return _api.setSessionTimeoutDuration(timeout.inMilliseconds);
+        return await _api.setSessionTimeoutDuration(timeout.inMilliseconds);
       }
     } catch (e, s) {
       convertPlatformException(e, s);
@@ -183,23 +181,19 @@ class MethodChannelFirebaseAnalytics extends FirebaseAnalyticsPlatform {
     String? hashedPhoneNumber,
   }) {
     try {
-      return _api.initiateOnDeviceConversionMeasurement(
-        <String, String?>{
-          'emailAddress': emailAddress,
-          'phoneNumber': phoneNumber,
-          'hashedEmailAddress': hashedEmailAddress,
-          'hashedPhoneNumber': hashedPhoneNumber,
-        },
-      );
+      return _api.initiateOnDeviceConversionMeasurement(<String, String?>{
+        'emailAddress': emailAddress,
+        'phoneNumber': phoneNumber,
+        'hashedEmailAddress': hashedEmailAddress,
+        'hashedPhoneNumber': hashedPhoneNumber,
+      });
     } catch (e, s) {
       convertPlatformException(e, s);
     }
   }
 
   @override
-  Future<void> logTransaction({
-    required String transactionId,
-  }) {
+  Future<void> logTransaction({required String transactionId}) {
     try {
       return _api.logTransaction(transactionId);
     } catch (e, s) {

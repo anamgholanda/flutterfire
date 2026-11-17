@@ -27,9 +27,8 @@ class FirebaseWebService {
   });
 }
 
-typedef EnsurePluginInitialized = Future<void> Function(
-  firebase.App firebaseApp,
-)?;
+typedef EnsurePluginInitialized =
+    Future<void> Function(firebase.App firebaseApp)?;
 
 /// The entry point for accessing Firebase.
 ///
@@ -57,10 +56,18 @@ class FirebaseCoreWeb extends FirebasePlatform {
     );
   }
 
+  /// Whether [service] is still registered for per-app initialization.
+  ///
+  /// Used by tests to ensure App Check is not removed after the first
+  /// [initializeApp] (secondary apps must re-run ensurePluginInitialized).
+  @visibleForTesting
+  static bool isServiceRegistered(String service) =>
+      _services.containsKey(service);
+
   static const String _libraryName = 'flutter-fire-core';
 
   /// Registers that [FirebaseCoreWeb] is the platform implementation.
-  static void registerWith(Registrar registrar) {
+  static void registerWith(dynamic registrar) {
     FirebasePlatform.instance = FirebaseCoreWeb();
   }
 
@@ -70,15 +77,22 @@ class FirebaseCoreWeb extends FirebasePlatform {
     String packageVersion,
   ) {
     final sessionKey = 'flutterfire-$libraryName-$packageVersion';
-    final sessionItem = web.window.sessionStorage.getItem(sessionKey);
-    if (sessionItem == null) {
+    try {
+      if (web.window.sessionStorage.getItem(sessionKey) != null) return;
       web.window.sessionStorage.setItem(sessionKey, packageVersion);
-      firebase.registerVersion(libraryName, packageVersion);
+    } catch (_) {
+      // Accessing `window.sessionStorage` throws a SecurityError when the user
+      // blocks site data. The cache only avoids duplicate registrations, so
+      // register anyway instead of failing `initializeApp`.
     }
+    firebase.registerVersion(libraryName, packageVersion);
   }
 
   static void registerLibraryVersion(String libraryName, String version) {
     _libraryVersions[libraryName] = version;
+    if (globalContext.getProperty('firebase_core'.toJS) != null) {
+      _registerVersionIfNeeded(libraryName, version);
+    }
   }
 
   static void _registerAllLibraryVersions() {
@@ -109,15 +123,17 @@ class FirebaseCoreWeb extends FirebasePlatform {
   /// You must ensure the Firebase script is injected before using the service.
   List<String> get _ignoredServiceScripts {
     try {
-      JSObject? ignored =
-          globalContext.getProperty('flutterfire_ignore_scripts'.toJS);
-
-      // Cannot be done with Dart 3.2 constraints
-      // ignore: invalid_runtime_check_with_js_interop_types
-      if (ignored is Iterable) {
-        // ignore: invalid_runtime_check_with_js_interop_types
-        return (ignored! as Iterable)
-            .map((e) => e.toString())
+      final ignored = globalContext.getProperty(
+        'flutterfire_ignore_scripts'.toJS,
+      );
+      if (ignored != null && ignored.isA<JSArray>()) {
+        return (ignored as JSArray<JSAny?>).toDart
+            .map((entry) {
+              if (entry != null && entry.isA<JSString>()) {
+                return (entry as JSString).toDart;
+              }
+              return entry?.toString() ?? 'null';
+            })
             .toList(growable: false);
       }
     } catch (e) {
@@ -126,6 +142,10 @@ class FirebaseCoreWeb extends FirebasePlatform {
 
     return [];
   }
+
+  /// Services listed on `window.flutterfire_ignore_scripts`.
+  @visibleForTesting
+  List<String> get ignoredServiceScripts => _ignoredServiceScripts;
 
   final String _defaultTrustedPolicyName = 'flutterfire-';
 
@@ -144,25 +164,23 @@ class FirebaseCoreWeb extends FirebasePlatform {
         'TrustedTypes available. Creating policy: $trustedTypePolicyName'.toJS,
       );
       try {
-        final web.TrustedTypePolicy policy =
-            web.window.trustedTypes.createPolicy(
-          trustedTypePolicyName,
-          web.TrustedTypePolicyOptions(
-            createScriptURL: ((JSString url) => src).toJS,
-            createScript: ((JSString script, JSString? type) => script).toJS,
-          ),
-        );
+        final web.TrustedTypePolicy policy = web.window.trustedTypes
+            .createPolicy(
+              trustedTypePolicyName,
+              web.TrustedTypePolicyOptions(
+                createScriptURL: ((JSString url) => src).toJS,
+                createScript:
+                    ((JSString script, JSString? type) => script).toJS,
+              ),
+            );
         final trustedUrl = policy.createScriptURLNoArgs(src);
         final stringUrl = (trustedUrl as JSObject).callMethod('toString'.toJS);
-        final trustedScript = policy.createScript(
-          '''
+        final trustedScript = policy.createScript('''
             window.ff_trigger_$windowVar = async (callback) => {
               console.debug("Initializing Firebase $windowVar");
               callback(await import("$stringUrl"));
             };
-          ''',
-          null,
-        );
+          ''', null);
 
         script.trustedScript = trustedScript;
 
@@ -172,7 +190,8 @@ class FirebaseCoreWeb extends FirebasePlatform {
       }
     } else {
       final stringUrl = src;
-      script.text = '''
+      script.text =
+          '''
       window.ff_trigger_$windowVar = async (callback) => {
         console.debug("Initializing Firebase $windowVar");
         callback(await import("$stringUrl"));
@@ -208,28 +227,47 @@ class FirebaseCoreWeb extends FirebasePlatform {
     String version = firebaseSDKVersion;
     List<String> ignored = _ignoredServiceScripts;
 
-    await Future.wait(
-      _services.values.map((service) {
-        if (ignored.contains(service.override ?? service.name)) {
-          return Future.value();
-        }
+    Future<void> injectService(FirebaseWebService service) {
+      if (ignored.contains(service.override ?? service.name)) {
+        return Future.value();
+      }
 
-        const firestoreServiceName = 'firestore';
+      const firestoreServiceName = 'firestore';
 
-        if (service.name == firestoreServiceName) {
-          // Inject the Firestore Pipelines script. This bundle supports both
-          // Pipeline operations (Enterprise edition) and standard Firestore queries.
-          return injectSrcScript(
-            'https://www.gstatic.com/firebasejs/$version/firebase-firestore-pipelines.js',
-            'firebase_$firestoreServiceName',
-          );
-        }
-
+      if (service.name == firestoreServiceName) {
+        // Inject the Firestore Pipelines script. This bundle supports both
+        // Pipeline operations (Enterprise edition) and standard Firestore queries.
         return injectSrcScript(
-          'https://www.gstatic.com/firebasejs/$version/firebase-${service.name}.js',
-          'firebase_${service.override ?? service.name}',
+          'https://www.gstatic.com/firebasejs/$version/firebase-firestore-pipelines.js',
+          'firebase_$firestoreServiceName',
         );
-      }),
+      }
+
+      return injectSrcScript(
+        'https://www.gstatic.com/firebasejs/$version/firebase-${service.name}.js',
+        'firebase_${service.override ?? service.name}',
+      );
+    }
+
+    // Every component bundle (firebase-auth.js, firebase-messaging.js, ...)
+    // statically imports from firebase-app.js. Loading all services with
+    // concurrent dynamic import()s makes those imports race on the shared
+    // firebase-app.js module, which trips a WebKit module-evaluation defect:
+    // the returned namespace can still have its top-level bindings in the
+    // temporal dead zone, so reading firebase.SDK_VERSION right afterwards
+    // throws "ReferenceError: Cannot access 'SDK_VERSION' before
+    // initialization" (Safari/WKWebView only). Load firebase-app.js first,
+    // then fan out to the component bundles in parallel.
+    // https://github.com/firebase/flutterfire/issues/18436
+    final coreService = _services['core'];
+    if (coreService != null) {
+      await injectService(coreService);
+    }
+
+    await Future.wait(
+      _services.values
+          .where((service) => !identical(service, coreService))
+          .map(injectService),
     );
     registerLibraryVersion(_libraryName, packageVersion);
     _registerAllLibraryVersions();
@@ -273,12 +311,10 @@ class FirebaseCoreWeb extends FirebasePlatform {
     await _initializeCore();
     guardNotInitialized(() => firebase.SDK_VERSION);
 
-    assert(
-      () {
-        if (firebase.SDK_VERSION != supportedFirebaseJsSdkVersion) {
-          // ignore: avoid_print
-          print(
-            '''
+    assert(() {
+      if (firebase.SDK_VERSION != supportedFirebaseJsSdkVersion) {
+        // ignore: avoid_print
+        print('''
             WARNING: FlutterFire for Web is explicitly tested against Firebase JS SDK version "$supportedFirebaseJsSdkVersion"
             but your currently specifying "${firebase.SDK_VERSION}" by either the imported Firebase JS SDKs in your web/index.html
             file or by providing an override - this may lead to unexpected issues in your application. It is recommended that you change all of the versions of the
@@ -293,13 +329,11 @@ class FirebaseCoreWeb extends FirebasePlatform {
             If you import the Firebase scripts in index.html, instead allow FlutterFire to manage this for you by removing
             any Firebase scripts in your web/index.html file:
                 e.g. remove: <script src="https://www.gstatic.com/firebasejs/${firebase.SDK_VERSION}/firebase-app.js"></script>
-          ''',
-          );
-        }
+          ''');
+      }
 
-        return true;
-      }(),
-    );
+      return true;
+    }());
 
     firebase.App? app;
 
@@ -367,7 +401,13 @@ class FirebaseCoreWeb extends FirebasePlatform {
           measurementId: options.measurementId,
         );
       } catch (e) {
-        if (_getJSErrorCode(e as JSError) == 'app/duplicate-app') {
+        // isA on Object requires Dart 3.12; this package supports 3.6.
+        // ignore: invalid_runtime_check_with_js_interop_types
+        if (e is! JSError) {
+          rethrow;
+        }
+
+        if (_getJSErrorCode(e) == 'app/duplicate-app') {
           throw duplicateApp(name);
         }
 
@@ -375,15 +415,20 @@ class FirebaseCoreWeb extends FirebasePlatform {
       }
     }
 
-    final appCheck = _services.remove('app-check');
-    if (appCheck != null) {
-      // Activate app check first
-      await appCheck.ensurePluginInitialized!(app!);
+    // Activate App Check before other services so Auth/etc. attach tokens.
+    // Do NOT remove 'app-check' from [_services]: secondary (named) apps also
+    // need ensurePluginInitialized on each Firebase.initializeApp() call.
+    // Removing it caused App Check to skip reactivation for named apps on
+    // reload, so accounts:lookup ran without X-Firebase-AppCheck (#18556).
+    final appCheck = _services['app-check'];
+    final appCheckEnsureInitialized = appCheck?.ensurePluginInitialized;
+    if (appCheckEnsureInitialized != null) {
+      await appCheckEnsureInitialized(app!);
     }
 
     await Future.wait(
-      _services.values.map((service) {
-        final ensureInitializedFunction = service.ensurePluginInitialized;
+      _services.entries.where((entry) => entry.key != 'app-check').map((entry) {
+        final ensureInitializedFunction = entry.value.ensurePluginInitialized;
 
         if (ensureInitializedFunction == null || app == null) {
           return Future.value();
@@ -408,7 +453,13 @@ class FirebaseCoreWeb extends FirebasePlatform {
       app = guardNotInitialized(() => firebase.app(name));
       return _createFromJsApp(app);
     } catch (e) {
-      if (_getJSErrorCode(e as JSError) == 'app/no-app') {
+      // isA on Object requires Dart 3.12; this package supports 3.6.
+      // ignore: invalid_runtime_check_with_js_interop_types
+      if (e is! JSError) {
+        rethrow;
+      }
+
+      if (_getJSErrorCode(e) == 'app/no-app') {
         throw noAppExists(name);
       }
 
@@ -432,9 +483,7 @@ R guardNotInitialized<R>(R Function() cb) {
     final value = cb();
 
     if (value is Future) {
-      return value.catchError(
-        _handleException,
-      ) as R;
+      return value.catchError(_handleException) as R;
     }
 
     return value;

@@ -39,6 +39,12 @@ void main() {
       FirebasePlatform.instance = mock;
     });
   });
+
+  group('$FirebasePlugin', () {
+    test('is not a platform interface', () {
+      expect(TestFirebasePlugin(), isNot(isA<PlatformInterface>()));
+    });
+  });
 }
 
 class ImplementsFirebasePlatform implements FirebasePlatform {
@@ -68,5 +74,8 @@ class FirebaseCoreMockPlatform extends Mock
     with
         // ignore: prefer_mixin, plugin_platform_interface needs to migrate to use `mixin`
         MockPlatformInterfaceMixin
-    implements
-        FirebasePlatform {}
+    implements FirebasePlatform {}
+
+class TestFirebasePlugin extends FirebasePlugin {
+  TestFirebasePlugin() : super(defaultFirebaseAppName, 'test_plugin');
+}

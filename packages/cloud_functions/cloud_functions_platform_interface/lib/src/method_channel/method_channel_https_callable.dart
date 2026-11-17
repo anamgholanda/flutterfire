@@ -11,14 +11,30 @@ import '../../cloud_functions_platform_interface.dart';
 import 'method_channel_firebase_functions.dart';
 import 'utils/exception.dart';
 
+dynamic _convertNested(Object? value) {
+  if (value is List) {
+    return value.map(_convertNested).toList();
+  }
+  if (value is Map) {
+    return value.map<String, dynamic>(
+      (key, value) => MapEntry(key as String, _convertNested(value)),
+    );
+  }
+  return value;
+}
+
 /// Method Channel delegate for [HttpsCallablePlatform].
 class MethodChannelHttpsCallable extends HttpsCallablePlatform {
   /// Creates a new [MethodChannelHttpsCallable] instance.
-  MethodChannelHttpsCallable(FirebaseFunctionsPlatform functions,
-      String? origin, String? name, HttpsCallableOptions options, Uri? uri)
-      : _baseEventChannelId =
-            name ?? uri?.pathSegments.join('_').replaceAll('.', '_') ?? '',
-        super(functions, origin, name, options, uri);
+  MethodChannelHttpsCallable(
+    FirebaseFunctionsPlatform functions,
+    String? origin,
+    String? name,
+    HttpsCallableOptions options,
+    Uri? uri,
+  ) : _baseEventChannelId =
+          name ?? uri?.pathSegments.join('_').replaceAll('.', '_') ?? '',
+      super(functions, origin, name, options, uri);
 
   static int _streamIdCounter = 0;
   final String _baseEventChannelId;
@@ -28,21 +44,19 @@ class MethodChannelHttpsCallable extends HttpsCallablePlatform {
     try {
       Object? result = await MethodChannelFirebaseFunctions.pigeonChannel
           .call(<String, dynamic>{
-        'appName': functions.app!.name,
-        'functionName': name,
-        'functionUri': uri?.toString(),
-        'origin': origin,
-        'region': functions.region,
-        'timeout': options.timeout.inMilliseconds,
-        'parameters': parameters,
-        'limitedUseAppCheckToken': options.limitedUseAppCheckToken,
-      });
+            'appName': functions.app!.name,
+            'functionName': name,
+            'functionUri': uri?.toString(),
+            'origin': origin,
+            'region': functions.region,
+            'timeout': options.timeout.inMilliseconds,
+            'parameters': parameters,
+            'limitedUseAppCheckToken': options.limitedUseAppCheckToken,
+            'allowInsecureTokenAttachment':
+                functions.allowInsecureTokenAttachment,
+          });
 
-      if (result is Map) {
-        return Map<String, dynamic>.from(result);
-      } else {
-        return result;
-      }
+      return _convertNested(result);
     } catch (e, s) {
       convertPlatformException(e, s);
     }
@@ -53,29 +67,31 @@ class MethodChannelHttpsCallable extends HttpsCallablePlatform {
     // Each stream() call gets a unique channel ID to prevent collisions
     // when invoking the same function concurrently. See #18036.
     final eventChannelId = '${_baseEventChannelId}_${_streamIdCounter++}';
-    final channel =
-        EventChannel('plugins.flutter.io/firebase_functions/$eventChannelId');
+    final channel = EventChannel(
+      'plugins.flutter.io/firebase_functions/$eventChannelId',
+    );
     try {
       await MethodChannelFirebaseFunctions.pigeonChannel
           .registerEventChannel(<String, Object>{
-        'eventChannelId': eventChannelId,
-        'appName': functions.app!.name,
-        'region': functions.region,
-      });
+            'eventChannelId': eventChannelId,
+            'appName': functions.app!.name,
+            'region': functions.region,
+          });
       final eventData = {
         'functionName': name,
         'functionUri': uri?.toString(),
         'origin': origin,
         'parameters': parameters,
         'limitedUseAppCheckToken': options.limitedUseAppCheckToken,
+        'allowInsecureTokenAttachment': functions.allowInsecureTokenAttachment,
         'timeout': options.timeout.inMilliseconds,
       };
-      yield* channel.receiveBroadcastStream(eventData).map((message) {
-        if (message is Map) {
-          return Map<String, dynamic>.from(message);
-        }
-        return message;
-      });
+      // Stream errors are forwarded by `yield*` rather than thrown into the
+      // `catch` below, so they are converted on the stream itself.
+      yield* channel
+          .receiveBroadcastStream(eventData)
+          .handleError(convertPlatformException)
+          .map(_convertNested);
     } catch (e, s) {
       convertPlatformException(e, s);
     }

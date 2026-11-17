@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import FirebaseFunctions
+
 #if canImport(FlutterMacOS)
   import FlutterMacOS
 #else
@@ -13,14 +15,12 @@
 #else
   import firebase_core_shared
 #endif
-import FirebaseFunctions
-
-extension FlutterError: Error {}
 
 let kFLTFirebaseFunctionsChannelName = "plugins.flutter.io/firebase_functions"
 
 public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, FlutterPlugin,
-  CloudFunctionsHostApi {
+  CloudFunctionsHostApi
+{
   func call(arguments: [String: Any?], completion: @escaping (Result<Any?, any Error>) -> Void) {
     httpsFunctionCall(arguments: arguments) { result, error in
       if let error {
@@ -31,8 +31,10 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
     }
   }
 
-  func registerEventChannel(arguments: [String: Any],
-                            completion: @escaping (Result<Void, any Error>) -> Void) {
+  func registerEventChannel(
+    arguments: [String: Any],
+    completion: @escaping (Result<Void, any Error>) -> Void
+  ) {
     let eventChannelId = arguments["eventChannelId"]!
     let eventChannelName = "\(kFLTFirebaseFunctionsChannelName)/\(eventChannelId)"
     let eventChannel = FlutterEventChannel(name: eventChannelName, binaryMessenger: binaryMessenger)
@@ -80,8 +82,10 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
     CloudFunctionsHostApiSetup.setUp(binaryMessenger: binaryMessenger, api: instance)
   }
 
-  private func httpsFunctionCall(arguments: [String: Any],
-                                 completion: @escaping (Any?, FlutterError?) -> Void) {
+  private func httpsFunctionCall(
+    arguments: [String: Any],
+    completion: @escaping (Any?, FlutterError?) -> Void
+  ) {
     let appName = arguments["appName"] as? String ?? ""
     let functionName = arguments["functionName"] as? String
     let functionUri = arguments["functionUri"] as? String
@@ -95,10 +99,16 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
 
     let functions = Functions.functions(app: app, region: region ?? "")
 
+    #if DEBUG
+      functions.allowInsecureTokenAttachment =
+        arguments["allowInsecureTokenAttachment"] as? Bool ?? false
+    #endif
+
     if let origin, !origin.isEmpty,
-       let url = URL(string: origin),
-       let host = url.host,
-       let port = url.port {
+      let url = URL(string: origin),
+      let host = url.host,
+      let port = url.port
+    {
       functions.useEmulator(withHost: host, port: port)
     }
 
@@ -109,14 +119,18 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
     if let functionName, !functionName.isEmpty {
       function = functions.httpsCallable(functionName, options: options)
     } else if let functionUri, !functionUri.isEmpty,
-              let url = URL(string: functionUri) {
+      let url = URL(string: functionUri)
+    {
       function = functions.httpsCallable(url, options: options)
     } else {
-      completion(nil, FlutterError(
-        code: "IllegalArgumentException",
-        message: "Either functionName or functionUri must be set",
-        details: nil
-      ))
+      completion(
+        nil,
+        FlutterError(
+          code: "IllegalArgumentException",
+          message: "Either functionName or functionUri must be set",
+          details: nil
+        )
+      )
       return
     }
 
@@ -127,7 +141,7 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
 
     function.call(parameters) { result, error in
       if let error {
-        let flutterError = self.createFlutterError(from: error)
+        let flutterError = Self.createFlutterError(from: error)
         completion(nil, flutterError)
       } else {
         completion(result?.data, nil)
@@ -142,7 +156,7 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
     return Functions.functions(app: app, region: region ?? "")
   }
 
-  private func createFlutterError(from error: Error) -> FlutterError {
+  static func createFlutterError(from error: Error) -> FlutterError {
     let nsError = error as NSError
     var errorCode = "unknown"
     var additionalDetails: [String: Any] = [:]
@@ -165,7 +179,7 @@ public class FirebaseFunctionsPlugin: NSObject, FLTFirebasePluginProtocol, Flutt
     )
   }
 
-  private func mapFunctionsErrorCode(_ code: Int) -> String {
+  private static func mapFunctionsErrorCode(_ code: Int) -> String {
     switch code {
     case FunctionsErrorCode.aborted.rawValue: return "aborted"
     case FunctionsErrorCode.alreadyExists.rawValue: return "already-exists"

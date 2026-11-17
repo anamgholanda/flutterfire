@@ -17,7 +17,7 @@ import 'utils/provider_to_string.dart';
 class MethodChannelFirebaseAppCheck extends FirebaseAppCheckPlatform {
   /// Create an instance of [MethodChannelFirebaseAppCheck].
   MethodChannelFirebaseAppCheck({required FirebaseApp app})
-      : super(appInstance: app) {
+    : super(appInstance: app) {
     _tokenChangesListeners[app.name] = StreamController<String?>.broadcast();
     _listenerRegistration = _registerTokenListener(app);
   }
@@ -33,13 +33,13 @@ class MethodChannelFirebaseAppCheck extends FirebaseAppCheckPlatform {
       _subscription = events
           .receiveGuardedBroadcastStream(onError: convertPlatformException)
           .listen((arguments) {
-        // ignore: close_sinks
-        final controller = _tokenChangesListeners[app.name];
-        if (!_isDisposed && controller != null) {
-          Map<dynamic, dynamic> result = arguments;
-          controller.add(result['token'] as String?);
-        }
-      });
+            // ignore: close_sinks
+            final controller = _tokenChangesListeners[app.name];
+            if (!_isDisposed && controller != null) {
+              Map<dynamic, dynamic> result = arguments;
+              controller.add(result['token'] as String?);
+            }
+          });
       // ignore: avoid_catches_without_on_clauses
     } catch (_) {
       // Silently ignore errors during token listener registration.
@@ -51,7 +51,7 @@ class MethodChannelFirebaseAppCheck extends FirebaseAppCheckPlatform {
       {};
 
   static Map<String, MethodChannelFirebaseAppCheck>
-      _methodChannelFirebaseAppCheckInstances =
+  _methodChannelFirebaseAppCheckInstances =
       <String, MethodChannelFirebaseAppCheck>{};
 
   /// The Pigeon API used for platform communication.
@@ -96,17 +96,7 @@ class MethodChannelFirebaseAppCheck extends FirebaseAppCheckPlatform {
 
   @override
   Future<void> activate({
-    WebProvider? webProvider,
-    @Deprecated(
-      'Use providerAndroid instead. '
-      'This parameter will be removed in a future major release.',
-    )
-    AndroidProvider? androidProvider,
-    @Deprecated(
-      'Use providerApple instead. '
-      'This parameter will be removed in a future major release.',
-    )
-    AppleProvider? appleProvider,
+    WebProvider? providerWeb,
     AndroidAppCheckProvider? providerAndroid,
     AppleAppCheckProvider? providerApple,
     WindowsAppCheckProvider? providerWindows,
@@ -115,23 +105,21 @@ class MethodChannelFirebaseAppCheck extends FirebaseAppCheckPlatform {
       await _pigeonApi.activate(
         app.name,
         defaultTargetPlatform == TargetPlatform.android || kDebugMode
-            ? getAndroidProviderString(
-                legacyProvider: androidProvider,
-                newProvider: providerAndroid,
-              )
+            ? getAndroidProviderString(providerAndroid)
             : null,
         defaultTargetPlatform == TargetPlatform.iOS ||
                 defaultTargetPlatform == TargetPlatform.macOS ||
                 kDebugMode
-            ? getAppleProviderString(
-                legacyProvider: appleProvider,
-                newProvider: providerApple,
-              )
+            ? getAppleProviderString(providerApple)
             : null,
         _getDebugToken(
           providerAndroid: providerAndroid,
           providerApple: providerApple,
           providerWindows: providerWindows,
+        ),
+        _getRecaptchaSiteKey(
+          providerAndroid: providerAndroid,
+          providerApple: providerApple,
         ),
       );
     } on PlatformException catch (e, s) {
@@ -143,6 +131,25 @@ class MethodChannelFirebaseAppCheck extends FirebaseAppCheckPlatform {
   Future<String?> getToken(bool forceRefresh) async {
     try {
       return await _pigeonApi.getToken(app.name, forceRefresh);
+    } on PlatformException catch (e, s) {
+      convertPlatformException(e, s);
+    }
+  }
+
+  @override
+  Future<AppCheckTokenResult?> getTokenResult(bool forceRefresh) async {
+    try {
+      final result = await _pigeonApi.getTokenResult(app.name, forceRefresh);
+      if (result == null) {
+        return null;
+      }
+
+      return AppCheckTokenResult(
+        token: result.token,
+        expirationTime: result.expirationTimestamp == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(result.expirationTimestamp!),
+      );
     } on PlatformException catch (e, s) {
       convertPlatformException(e, s);
     }
@@ -196,6 +203,27 @@ String? _getDebugToken({
       return providerWindows is WindowsDebugProvider
           ? providerWindows.debugToken
           : null;
+    case TargetPlatform.fuchsia:
+    case TargetPlatform.linux:
+      return null;
+  }
+}
+
+String? _getRecaptchaSiteKey({
+  AndroidAppCheckProvider? providerAndroid,
+  AppleAppCheckProvider? providerApple,
+}) {
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      return providerAndroid is AndroidReCaptchaProvider
+          ? providerAndroid.siteKey
+          : null;
+    case TargetPlatform.iOS:
+    case TargetPlatform.macOS:
+      return providerApple is AppleReCaptchaProvider
+          ? providerApple.siteKey
+          : null;
+    case TargetPlatform.windows:
     case TargetPlatform.fuchsia:
     case TargetPlatform.linux:
       return null;

@@ -42,11 +42,11 @@ FirebaseException platformExceptionToFirebaseAuthException(
         .replaceAll('ERROR_', '')
         .toLowerCase()
         .replaceAll('_', '-');
+    final details = platformException.details is Map
+        ? platformException.details as Map
+        : null;
 
-    final customCode = _getCustomCode(
-      platformException.details,
-      platformException.message,
-    );
+    final customCode = _getCustomCode(details, platformException.message);
     if (customCode != null) {
       code = customCode;
     }
@@ -60,12 +60,10 @@ FirebaseException platformExceptionToFirebaseAuthException(
     AuthCredential? credential;
     String? email;
 
-    if (platformException.details != null) {
-      if (platformException.details['authCredential'] != null &&
-          platformException.details['authCredential']
-              is InternalAuthCredential) {
-        InternalAuthCredential pigeonAuthCredential =
-            platformException.details['authCredential'];
+    if (details != null) {
+      if (details['authCredential'] != null &&
+          details['authCredential'] is InternalAuthCredential) {
+        InternalAuthCredential pigeonAuthCredential = details['authCredential'];
 
         credential = AuthCredential(
           providerId: pigeonAuthCredential.providerId,
@@ -75,8 +73,8 @@ FirebaseException platformExceptionToFirebaseAuthException(
         );
       }
 
-      if (platformException.details['email'] != null) {
-        email = platformException.details['email'];
+      if (details['email'] != null) {
+        email = details['email'];
       }
     }
 
@@ -165,7 +163,8 @@ String? _getCustomCode(Map? additionalData, String? message) {
 const kMultiFactorError = 'second-factor-required';
 
 FirebaseAuthMultiFactorExceptionPlatform parseMultiFactorError(
-    PlatformException exception) {
+  PlatformException exception,
+) {
   const code = kMultiFactorError;
   final message = exception.message;
   final additionalData = exception.details as Map<Object?, Object?>?;
@@ -178,25 +177,17 @@ FirebaseAuthMultiFactorExceptionPlatform parseMultiFactorError(
   }
 
   final pigeonMultiFactorInfo =
-      (additionalData['multiFactorHints'] as List<Object?>? ?? [])
-          .nonNulls
-          .map(
-            InternalMultiFactorInfo.decode,
-          )
+      (additionalData['multiFactorHints'] as List<Object?>? ?? []).nonNulls
+          .map(InternalMultiFactorInfo.decode)
           .toList();
 
-  final multiFactorInfo = multiFactorInfoPigeonToObject(
-    pigeonMultiFactorInfo,
-  );
+  final multiFactorInfo = multiFactorInfoPigeonToObject(pigeonMultiFactorInfo);
 
   final auth = MethodChannelFirebaseAuth
       .methodChannelFirebaseAuthInstances[additionalData['appName']];
 
   if (auth == null) {
-    throw FirebaseAuthException(
-      code: code,
-      message: message,
-    );
+    throw FirebaseAuthException(code: code, message: message);
   }
 
   final sessionId = additionalData['multiFactorSessionId'] as String?;

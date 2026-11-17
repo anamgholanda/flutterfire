@@ -25,9 +25,7 @@ import java.util.Locale
 import java.util.Objects
 import java.util.concurrent.TimeUnit
 
-class FlutterFirebaseFunctionsPlugin
-
-  : FlutterPlugin, FlutterFirebasePlugin, CloudFunctionsHostApi {
+class FlutterFirebaseFunctionsPlugin : FlutterPlugin, FlutterFirebasePlugin, CloudFunctionsHostApi {
   private var channel: MethodChannel? = null
   private var pluginBinding: FlutterPluginBinding? = null
   private var messenger: BinaryMessenger? = null
@@ -66,7 +64,7 @@ class FlutterFirebaseFunctionsPlugin
         val origin = arguments["origin"] as String?
         val timeout = (arguments["timeout"] as Number?)?.toInt()
         val limitedUseAppCheckToken =
-          Objects.requireNonNull(arguments["limitedUseAppCheckToken"]) as Boolean
+            Objects.requireNonNull(arguments["limitedUseAppCheckToken"]) as Boolean
         val parameters = arguments["parameters"]
 
         if (origin != null) {
@@ -76,23 +74,21 @@ class FlutterFirebaseFunctionsPlugin
 
         val httpsCallableReference: HttpsCallableReference
         val options: HttpsCallableOptions =
-          HttpsCallableOptions.Builder()
-            .setLimitedUseAppCheckTokens(limitedUseAppCheckToken)
-            .build()
+            HttpsCallableOptions.Builder()
+                .setLimitedUseAppCheckTokens(limitedUseAppCheckToken)
+                .build()
 
-        httpsCallableReference = if (functionName != null) {
-          firebaseFunctions.getHttpsCallable(functionName, options)
-        } else if (functionUri != null) {
-          firebaseFunctions.getHttpsCallableFromUrl(URL(functionUri), options)
-        } else {
-          throw IllegalArgumentException("Either functionName or functionUri must be set")
-        }
+        httpsCallableReference =
+            if (functionName != null) {
+              firebaseFunctions.getHttpsCallable(functionName, options)
+            } else if (functionUri != null) {
+              firebaseFunctions.getHttpsCallableFromUrl(URL(functionUri), options)
+            } else {
+              throw IllegalArgumentException("Either functionName or functionUri must be set")
+            }
 
         if (timeout != null) {
-          httpsCallableReference.setTimeout(
-            timeout.toLong(),
-            TimeUnit.MILLISECONDS
-          )
+          httpsCallableReference.setTimeout(timeout.toLong(), TimeUnit.MILLISECONDS)
         }
 
         val result = Tasks.await(httpsCallableReference.call(parameters))
@@ -103,52 +99,6 @@ class FlutterFirebaseFunctionsPlugin
     }
 
     return taskCompletionSource.task
-  }
-
-  private fun getExceptionDetails(exception: Exception?): Map<String, Any?> {
-    val details: MutableMap<String, Any?> = HashMap()
-
-    if (exception == null) {
-      return details
-    }
-
-    var code = "UNKNOWN"
-    var message = exception.message
-    var additionalData: Any? = null
-
-    if (exception.cause is FirebaseFunctionsException) {
-      val functionsException =
-        exception.cause as FirebaseFunctionsException?
-      code = functionsException!!.code.name
-      message = functionsException.message
-      additionalData = functionsException.details
-
-      if (functionsException.cause is IOException
-        && "Canceled" == (functionsException.cause as IOException).message
-      ) {
-        // return DEADLINE_EXCEEDED for IOException cancel errors, to match iOS & Web
-        code = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
-        message = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
-      } else if (functionsException.cause is InterruptedIOException // return DEADLINE_EXCEEDED for InterruptedIOException errors, to match iOS & Web
-        && "timeout" == (functionsException.cause as InterruptedIOException).message
-      ) {
-        code = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
-        message = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
-      } else if (functionsException.cause is IOException) {
-        // return UNAVAILABLE for network io errors, to match iOS & Web
-        code = FirebaseFunctionsException.Code.UNAVAILABLE.name
-        message = FirebaseFunctionsException.Code.UNAVAILABLE.name
-      }
-    }
-
-    details["code"] = code.replace("_", "-").lowercase(Locale.getDefault())
-    details["message"] = message
-
-    if (additionalData != null) {
-      details["additionalData"] = additionalData
-    }
-
-    return details
   }
 
   override fun getPluginConstantsForFirebaseApp(firebaseApp: FirebaseApp): Task<Map<String, Any>> {
@@ -169,31 +119,78 @@ class FlutterFirebaseFunctionsPlugin
 
   companion object {
     private const val METHOD_CHANNEL_NAME = "plugins.flutter.io/firebase_functions"
+
+    // Locale.ROOT: Turkish/Azerbaijani map 'I' → 'ı' under Locale.getDefault().
+    internal fun mapFunctionsErrorCode(code: String): String {
+      return code.replace("_", "-").lowercase(Locale.ROOT)
+    }
+
+    internal fun getExceptionDetails(exception: Throwable?): Map<String, Any?> {
+      val details: MutableMap<String, Any?> = HashMap()
+
+      if (exception == null) {
+        return details
+      }
+
+      var code = "UNKNOWN"
+      var message = exception.message
+      var additionalData: Any? = null
+
+      // Callable errors arrive wrapped by Tasks.await, stream errors unwrapped.
+      val functionsException =
+          exception as? FirebaseFunctionsException ?: exception.cause as? FirebaseFunctionsException
+      if (functionsException != null) {
+        code = functionsException.code.name
+        message = functionsException.message
+        // A stream that fails while reading gets the error as details, not as cause
+        // (PublisherStream.processSSEStream). The codec can't send a Throwable.
+        val cause = functionsException.cause ?: functionsException.details as? Throwable
+        additionalData = functionsException.details.takeUnless { it is Throwable }
+
+        if (cause is IOException && "Canceled" == cause.message) {
+          // return DEADLINE_EXCEEDED for IOException cancel errors, to match iOS & Web
+          code = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
+          message = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
+        } else if (cause is InterruptedIOException && "timeout" == cause.message) {
+          // return DEADLINE_EXCEEDED for InterruptedIOException errors, to match iOS & Web
+          code = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
+          message = FirebaseFunctionsException.Code.DEADLINE_EXCEEDED.name
+        } else if (cause is IOException) {
+          // return UNAVAILABLE for network io errors, to match iOS & Web
+          code = FirebaseFunctionsException.Code.UNAVAILABLE.name
+          message = FirebaseFunctionsException.Code.UNAVAILABLE.name
+        }
+      }
+
+      details["code"] = mapFunctionsErrorCode(code)
+      details["message"] = message
+
+      if (additionalData != null) {
+        details["additionalData"] = additionalData
+      }
+
+      return details
+    }
   }
 
   override fun call(arguments: Map<String, Any?>, callback: (Result<Any?>) -> Unit) {
-    httpsFunctionCall(arguments as Map<String, Any>)
-      .addOnCompleteListener { task ->
-        if (task.isSuccessful){
-          callback(Result.success(task.result))
-        }
-        else {
-          val exception = task.exception
-          callback(Result.failure(FlutterError(
-            "firebase_functions",
-            exception?.message,
-            getExceptionDetails(exception)
-          )))
-        }
-
+    httpsFunctionCall(arguments as Map<String, Any>).addOnCompleteListener { task ->
+      if (task.isSuccessful) {
+        callback(Result.success(task.result))
+      } else {
+        val exception = task.exception
+        callback(
+            Result.failure(
+                FlutterError(
+                    "firebase_functions", exception?.message, getExceptionDetails(exception))))
+      }
     }
   }
 
   override fun registerEventChannel(arguments: Map<String, Any>, callback: (Result<Unit>) -> Unit) {
     val eventId = Objects.requireNonNull(arguments["eventChannelId"]) as String
     val eventChannelName = "$METHOD_CHANNEL_NAME/$eventId"
-    val eventChannel =
-      EventChannel(pluginBinding!!.binaryMessenger, eventChannelName)
+    val eventChannel = EventChannel(pluginBinding!!.binaryMessenger, eventChannelName)
     val functions = getFunctions(arguments)
     val streamHandler = FirebaseFunctionsStreamHandler(functions)
     eventChannel.setStreamHandler(streamHandler)
