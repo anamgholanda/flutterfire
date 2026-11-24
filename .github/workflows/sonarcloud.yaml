@@ -113,7 +113,7 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8
             -Dsonar.sources=packages
             -Dsonar.inclusions=packages/**/lib/**/*.dart
-            -Dsonar.exclusions=**/example/**,**/*.g.dart,**/*.freezed.dart,**/generated/**,**/*.pb.dart,**/.dart_tool/**,**/*.g.h,**/*.g.cpp
+            -Dsonar.exclusions=**/example/**,**/*.g.dart,**/*.g.h,**/*.g.cpp,**/*.g.swift,**/*.freezed.dart,**/generated/**,**/*.pb.dart,**/.dart_tool/**
             -Dsonar.tests=packages
             -Dsonar.test.inclusions=packages/**/test/**/*.dart
             -Dsonar.dart.lcov.reportPaths=coverage/lcov.info
